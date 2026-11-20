@@ -46,3 +46,4 @@ model-probe.json
 # local data (DB + uploaded files)
 /storage/
 *.db
+/.next-build/

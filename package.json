@@ -1,5 +1,5 @@
 {
-  "name": "chopcheck",
+  "name": "memini",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,10 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "gen:data": "node scripts/gen-registry.mjs"
+    "gen:data": "node scripts/gen-registry.mjs",
+    "test:live": "vitest run --config vitest.live.config.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.9.0",
+    "better-sqlite3": "^13.2.0",
     "next": "15.5.29",
     "openai": "^7.57.0",
     "qrcode.react": "^4.2.0",
@@ -23,6 +25,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",

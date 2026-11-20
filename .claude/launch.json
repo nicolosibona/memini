@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "chopcheck",
+      "name": "memini",
       "runtimeExecutable": "/Users/nikc/.local/node/bin/node",
       "runtimeArgs": [
         "node_modules/next/dist/bin/next",
@@ -13,7 +13,8 @@
       ],
       "port": 3000,
       "env": {
-        "PATH": "/Users/nikc/.local/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        "PATH": "/Users/nikc/.local/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "LLM_PROVIDER": "mock"
       }
     }
   ]

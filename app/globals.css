@@ -1,39 +1,51 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #14161b;
-  --color-muted: #646a76;
-  --color-line: #e7e3da;
-  --color-paper: #f6f4ef;
+  --color-ink: #17191e;
+  --color-ink-2: #3a3e47;
+  --color-muted: #6b7080;
+  --color-faint: #9aa0ad;
+  --color-line: #e7e5e0;
+  --color-line-2: #f0eeea;
+  --color-paper: #f7f6f3;
   --color-card: #ffffff;
-  --color-brand: #c8361e;
-  --color-brand-dark: #9f2914;
-  --color-brand-soft: #fbeae5;
-  --color-factory: #1f7a55;
-  --color-factory-soft: #e4f3ec;
-  --color-unclear: #b26a00;
-  --color-unclear-soft: #fbf0dc;
-  --color-trading: #c42b2b;
-  --color-trading-soft: #fbe6e6;
-  --font-sans: ui-sans-serif, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
-  --font-display: "Songti SC", "STSong", "Noto Serif SC", ui-serif, Georgia, serif;
-  --shadow-soft: 0 1px 2px rgb(20 22 27 / 0.04), 0 8px 24px -12px rgb(20 22 27 / 0.12);
+  --color-hover: #f3f2ee;
+
+  --color-brand: #b8322a; /* seal red */
+  --color-brand-dark: #95271f;
+  --color-brand-soft: #f8e9e6;
+
+  --color-ok: #2f7a55;
+  --color-ok-soft: #e7f2ec;
+  --color-warn: #a8650b;
+  --color-warn-soft: #faf0de;
+  --color-bad: #c0392b;
+  --color-bad-soft: #fbe9e7;
+  --color-info: #3b5b8c;
+  --color-info-soft: #e9eff8;
+
+  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-seal: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
+html { -webkit-text-size-adjust: 100%; }
 body {
-  background-color: var(--color-paper);
-  background-image: radial-gradient(rgb(20 22 27 / 0.05) 1px, transparent 1px);
-  background-size: 22px 22px;
+  background: var(--color-paper);
   color: var(--color-ink);
+  font-feature-settings: "cv11", "ss01";
 }
 
-.font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
+::selection { background: var(--color-brand-soft); }
 
-@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise 0.45s ease-out both; }
+/* subtle entrance, once */
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.25s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
+
+.tabular { font-variant-numeric: tabular-nums; }
 
 @media print {
   .no-print { display: none !important; }
   body { background: #fff; }
-  @page { size: A4; margin: 14mm; }
 }

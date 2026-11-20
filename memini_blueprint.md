@@ -1,4 +1,6 @@
-# ChopCheck — Final Blueprint
+# Memini — Final Blueprint
+
+*Product renamed from ChopCheck to Memini on 2026-11-21 (D1). The scope also widened from sourcing to doing business in China: contacts, matters, documents, deadlines (see README).*
 
 *Version 3 (final, ready to build) — 2026-11-20.*
 *Replaces every earlier version: the "WeChat Deal & Trust Copilot" blueprint, "Supplier Identification" spec v1, and blueprint v2.*
@@ -122,7 +124,7 @@ The server must be a **long-running Node process** (`next start` on a VPS), not 
 | Database | **SQLite** via `better-sqlite3`, **FTS5** (trigram tokenizer, works for Chinese) | One file. Later: Postgres + pgvector. |
 | Files | `storage/files/` on the server (git-ignored) | |
 | WeCom crypto | Node `crypto`: SHA1 signature + AES-256-CBC, ~60 lines | Unit-test it with WeCom's sample vectors. |
-| Hosting | **One VPS with a static public IP**, `next start` behind Caddy | Required by WeCom's trusted IP (§13). **[OPEN] D10** (HK vs mainland). |
+| Hosting | **One VPS with a static public IP**, `next start` behind Caddy | Required by WeCom's trusted IP (§13). **Decided (D10):** Tencent Cloud Lighthouse Singapore (Ubuntu 24.04 LTS). |
 
 ---
 
@@ -765,7 +767,7 @@ Each has a **default** we build until the team decides, so nothing is blocked.
 
 | # | Decision | Options | Default for the build |
 |---|---|---|---|
-| D1 | Product name | — | **Decided: ChopCheck** (alternatives considered in §16.1) |
+| D1 | Product name | — | **Decided: Memini** (Latin "I remember"; renamed from ChopCheck on 2026-11-21 — alternatives in §16.1) |
 | D2 | Reply language (explanations, not the Chinese drafts) | Always English · user's language (auto-detect) · set in settings | English, `reply_language` field ready |
 | D3 | Can a learned nickname make the supplier "certain"? | Never · after ≥2 confirmations and no conflicts | Never (always menu, nickname first) |
 | D4 | Deals per supplier | One · several (per product) | One default deal; schema supports several |
@@ -774,13 +776,13 @@ Each has a **default** we build until the team decides, so nothing is blocked.
 | D7 | Uncertain intent (content vs question) | Ask with a menu · guess + "switch" button | Ask |
 | D8 | Model per step | See §19.3 | Haiku 5.5 for intent; Opus 5.5 (effort low) for extraction, analysis, drafts, assistant; decided by the bake-off (§19.7) |
 | D9 | Speech-to-text | `scribe_v2` · `qwen3-omni-flash` | `scribe_v2`, if the gateway exposes audio |
-| D10 | Server location | Hong Kong VPS (no ICP, reaches both Qwen and Claude) · mainland (needs ICP for domains) | Hong Kong |
+| D10 | Server location | Singapore VPS (no ICP, reaches Qwen + WeCom + Claude/OpenAI/Gemini without geo-blocks) · Hong Kong (geo-blocked by Claude/OpenAI/Gemini) · mainland (needs ICP for domains) | **Decided:** Singapore (Tencent Cloud Lighthouse, Ubuntu 24.04 LTS, 2 vCPU / 8 GB RAM) |
 | D11 | Accounts for the hackathon | Single fixed demo user · real login + QR linking | Single user; linking only if time allows |
 | D12 | Team use | One user per workspace · several teammates share a workspace | One user; schema already has workspaces |
 | D13 | Reminders (late samples, expiring certificates) | Web app only · email · WeChat when the user next writes | Web app badge + "I have 1 update" on next WeChat message |
 | D14 | WeChat reply length | Full analysis in WeChat · short summary + link | Full flags + draft in WeChat, details behind link |
 | D15 | Data retention | Keep forever · user-controlled deletion · auto-expire | User can delete a supplier and all its data |
-| D16 | Git hosting | — | **Decided:** private GitHub repo `chopcheck` |
+| D16 | Git hosting | — | **Decided:** private GitHub repo `memini` |
 | D17 | Link to discovery (e.g. Accio) | Ignore · roadmap slide · import a supplier from a link | Roadmap slide |
 | D18 | Business model to pitch | Freemium + paid "last mile" services · per-deal fee · subscription | Freemium + paid services (factory video visit, bilingual contracts, escrow) |
 
@@ -789,6 +791,7 @@ Check domains, App Store and trademarks before deciding; we haven't checked avai
 
 | Name | Meaning | Why it works | Watch out |
 |---|---|---|---|
+| **Memini** | Latin for "I remember" | The core promise: it remembers every price, promise, document and deadline; short, works in English and Italian; no well-known product with this exact name found (quick web search only) | Says nothing about China on its own → the red seal 印 logo and a tagline ("your China business memory") carry that |
 | **ChopCheck** | A "chop" is the Chinese company seal (公章) stamped on every license, PI and contract | Says exactly what it does (checks the documents) and sounds like an insider term | Means little to people who never sourced in China (fine: they aren't the users) |
 | **Laoban** (老板) | "Boss": what Chinese suppliers call the buyer in every chat | Instant recognition for the target users; puts the user in charge | Generic word, hard to trademark alone → "Laoban AI" |
 | **WeVet** | WeChat + vet (check a supplier) | Short, says where and what | Close to "WeChat" branding; may look like a Tencent product |
@@ -796,7 +799,7 @@ Check domains, App Store and trademarks before deciding; we haven't checked avai
 | **Guanxi** (关系) | Relationships / connections, the famous concept of doing business in China | Universally known among China traders | Many existing companies use it |
 | **Tingdong** (听懂) | "To understand what you hear" | Fits the voice notes and subtext decoder | Less about trust and protection |
 
-**Chosen: ChopCheck.** Runner-up: Laoban.
+**Chosen: Memini** (2026-11-21), replacing ChopCheck once the scope widened beyond checking supplier documents. Also considered: Paperpilot, Red Seal, RedMemo, DealMemo, Memchop, Memento (too common), Memofy (taken). Domains, App Store names and trademarks for Memini still to check.
 
 ---
 
@@ -835,7 +838,7 @@ This section is the reference for choosing models when we wire up each step. It 
 - The model list (Claude, OpenAI, Gemini, Qwen, DeepSeek, Kimi, GLM, ElevenLabs, …) suggests **one gateway that routes to many providers**. **[VERIFY]** in the first hour:
   1. Is the endpoint **Anthropic-compatible** (`/v1/messages`), **OpenAI-compatible** (`/v1/chat/completions`), or both?
   2. Does it pass through: images, **PDF documents**, **tool use**, **JSON schema / structured outputs**, `output_config.effort`, audio upload?
-  3. Is it reachable from the VPS (Hong Kong or mainland)?
+  3. Is it reachable from the VPS (Singapore)?
   4. Per-key spending limits and a usage page?
   5. Price list for non-Claude models (we only know Claude's prices for sure, below).
 - **Privacy:** the gateway sees every document we send (licenses, bank details). Fine for fictional demo data; for real users this is a production decision.
