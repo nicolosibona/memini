@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #14161b;
+  --color-muted: #646a76;
+  --color-line: #e7e3da;
+  --color-paper: #f6f4ef;
+  --color-card: #ffffff;
+  --color-brand: #c8361e;
+  --color-brand-dark: #9f2914;
+  --color-brand-soft: #fbeae5;
+  --color-factory: #1f7a55;
+  --color-factory-soft: #e4f3ec;
+  --color-unclear: #b26a00;
+  --color-unclear-soft: #fbf0dc;
+  --color-trading: #c42b2b;
+  --color-trading-soft: #fbe6e6;
+  --font-sans: ui-sans-serif, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  --font-display: "Songti SC", "STSong", "Noto Serif SC", ui-serif, Georgia, serif;
+  --shadow-soft: 0 1px 2px rgb(20 22 27 / 0.04), 0 8px 24px -12px rgb(20 22 27 / 0.12);
+}
+
+body {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(rgb(20 22 27 / 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+  color: var(--color-ink);
+}
+
+.font-display { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.45s ease-out both; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  @page { size: A4; margin: 14mm; }
+}
