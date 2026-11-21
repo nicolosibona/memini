@@ -35,3 +35,22 @@ export const SpecExtractionSchema = z.object({
     .describe("Claims that need care: a part substituted or 'equivalent', 'same parameters', typical-only values, vague words (左右, 约, 问题不大), conditions that change a value"),
 });
 export type SpecExtraction = z.infer<typeof SpecExtractionSchema>;
+
+/** Chat messages: the same reading with a slim output (≈5× fewer tokens → a few seconds on a small model).
+ *  Values keep their unit and sign in `value`; the comparison parses them itself. */
+export const SpecChatSchema = z.object({
+  role: z.enum(["requirement", "supplier", "unclear"]).describe("requirement = the buyer asking/specifying; supplier = the manufacturer answering"),
+  language: z.enum(["zh", "en", "it", "mixed", "other"]),
+  translation: z.string().describe("The whole message translated (Chinese → English; English/Italian → Simplified Chinese), every number, unit, sign and part number kept exactly"),
+  part_name: z.string().nullable(),
+  part_number: z.string().nullable(),
+  parameters: z.array(z.object({
+    key: z.enum(PARAM_KEYS),
+    component: z.string().nullable().describe("English sub-part name, e.g. 'Output capacitor', else null"),
+    value: z.string().describe("Exactly as written, with sign and unit: '≤150mV', '-10℃～+50℃', '16V', 'CE和RoHS'"),
+    op: z.enum(["eq", "min", "max", "range", "typ", "text"]),
+  })),
+  notes: z.array(z.object({ text_en: z.string().describe("At most 15 words"), quote: z.string().describe("At most 12 characters/words"), risk: z.enum(["low", "medium", "high"]) }))
+    .describe("Only real risks: a substituted part, 'same parameters' claims, typical-only values, vague promises. At most 2."),
+});
+export type SpecChat = z.infer<typeof SpecChatSchema>;

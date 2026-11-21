@@ -10,7 +10,7 @@ import { getDb, newId, nowIso, today, type DB } from "@/lib/db";
 import { transcribe } from "@/lib/adapters/asr";
 import { addFacts, formatValue, parseValue, factLabel, fmtDay, type FactRow } from "./facts";
 import { runAudit, openAlerts, type AlertRow } from "./audit";
-import { classifyIntent, commandOf } from "./intent";
+import { classifyIntent, commandOf, ruleIntent } from "./intent";
 import { documentClues, documentFacts, documentPerson, extractDocument, extractText, quickTranslate, textFacts } from "./extract";
 import { createEntity, entityLabel, getEntity, kindForRole, learnAliases, listEntities, ownNames, resolveEntity, type Clue } from "./entities";
 import { createMatter, getMatter, listMatters, pickMatter, touchMatter, matterChecklist, type MatterRow } from "./matters";
@@ -158,8 +158,9 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
   if (electronics) {
     // electronics spec check: everything forwarded goes into the open check; only a clear question goes to the assistant
     if (textOnly && isSheetRequest(text)) { setStatus(db, msgs, "command", "skipped"); return sheetFor(db, input.userId); }
-    const it = textOnly ? await classifyIntent(text, msgs.map((m) => m.kind)) : { intent: "content" as const, confidence: 1 };
-    const technical = /\d\s*(?:k?v|m?a|k?w|mv|%|°c|℃|[µμu]f|mm|k?hz|小时|伏|安)/i.test(text); // values → it's content, whatever the phrasing
+    // rules only (no model call: it cost 4–6 s per message); values → it's content, whatever the phrasing
+    const technical = /\d\s*(?:k?v|m?a|k?w|mv|%|°c|℃|[µμu]f|mm|k?hz|小时|伏|安)/i.test(text);
+    const it = textOnly && !technical ? ruleIntent(text) : { intent: "content" as const, confidence: 1 };
     if (it.intent === "question" && it.confidence >= 0.8 && !technical) {
       setStatus(db, msgs, "question", "skipped");
       await ack(THINKING);

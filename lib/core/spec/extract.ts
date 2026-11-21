@@ -8,7 +8,7 @@ import { htmlToText, mimeOf, originalFileName } from "../extract";
 import { isChinese } from "../normalize";
 import { COMPONENTS, KEYWORDS, PARAMS, PARAM_KEYS, SOFT_CLAIMS, TERMS, type ParamKey } from "./params";
 import { parseQty, parseRange } from "./quantity";
-import { SpecExtractionSchema, type SpecExtraction, type SpecParamOut } from "./schema";
+import { SpecChatSchema, SpecExtractionSchema, type SpecChat, type SpecExtraction, type SpecParamOut } from "./schema";
 
 const GLOSSARY = TERMS.map((t) => `${t.en} = ${t.zh}`).join("\n");
 
@@ -22,6 +22,11 @@ ${GLOSSARY}
   Sets (protections, certifications) go in ONE parameter with the items in value.
 - notes: claims that need care — a part substituted or called "equivalent"/"参数一样", domestic substitutes (国产替代), typical-only values, vague words (左右, 约, 问题不大), values that depend on a condition.
 Never invent a value that is not in the item. Unreadable → leave it out.`;
+
+const CHAT_SYSTEM = `You are a bilingual (English / Simplified Chinese) electronics engineer. A buyer forwards you one WeChat message from a conversation with a Chinese manufacturer: either the buyer's own message (usually English/Italian) or the supplier's (usually Chinese).
+Return ONE short JSON object: role, language, a faithful translation of the whole message (keep every number, unit, sign ≥ ≤ ~ and part number exactly; 不低于 = at least, 不超过 = at most, 典型值 = typical), and every technical value as {key, component, value, op}. Several values of one sub-part ("输出电容 1000μF 16V 85℃") → one entry each with component "Output capacitor" and keys capacitance / rated_voltage / temp_rating. Sets (certifications, protections) → one entry. Use these locked terms in translations:
+${GLOSSARY}
+Be brief. Never invent values.`;
 
 export type ItemInput = { text?: string | null; filePath?: string | null; author?: string | null; hint?: string };
 
@@ -43,12 +48,29 @@ export async function readSpecItem(item: ItemInput): Promise<{ data: SpecExtract
   } else if (item.filePath && mime === "application/pdf") {
     r = await callJSON({ ...base, text: intro, pdfBase64: fs.readFileSync(item.filePath).toString("base64") });
   } else if (!item.filePath && text.length < 1500) {
-    // a chat message: the small fast model (MODEL_SPEC_CHAT) — the reply must feel instant on WeChat
-    r = await callJSON({ ...base, step: "spec_chat", timeoutMs: Number(process.env.LLM_TIMEOUT_SPEC_CHAT_MS ?? 20000), text: `${intro}\n\nContent:\n${text}` });
+    // a chat message: small fast model + slim output — the reply must feel instant on WeChat; rules if it's late
+    const c = await callJSON({
+      step: "spec_chat", system: CHAT_SYSTEM, schema: SpecChatSchema, text: `${intro}\n\nMessage:\n${text}`,
+      timeoutMs: Number(process.env.LLM_TIMEOUT_SPEC_CHAT_MS ?? 12000), fallback: () => null as unknown as SpecChat,
+    });
+    if (!c.data) return { data: tidy(fallback()), source: "fallback" };
+    return { data: tidy(fromChat(c.data, text, item.author)), source: c.source };
   } else {
     r = await callJSON({ ...base, text: `${intro}\n\nContent:\n${text.slice(0, 30000)}` });
   }
   return { data: tidy(r.data), source: r.source };
+}
+
+/** Slim chat reading → the full shape the check stores. */
+function fromChat(c: SpecChat, text: string, author?: string | null): SpecExtraction {
+  return {
+    role: c.role, doc_kind: "chat", language: c.language,
+    title: author ? `Message from ${author}` : c.role === "supplier" ? "Supplier message" : "Your message",
+    summary_en: c.translation.slice(0, 200), part_name: c.part_name, part_number: c.part_number, supplier_name: null,
+    segments: [{ original: text, translation: c.translation }],
+    parameters: c.parameters.map((p) => ({ ...p, label: PARAMS[p.key]?.en ?? p.key, num: null, num_max: null, unit: null, quote: p.value })),
+    notes: c.notes.slice(0, 2),
+  };
 }
 
 /** Whatever came back: drop empty values, keep keys in the vocabulary. */
