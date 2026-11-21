@@ -216,24 +216,42 @@ function describeItems(msgs: MsgRow[]) {
     .filter(([c]) => c > 0).map(([c, w]) => `${c} ${w}${c > 1 ? "s" : ""}`).join(" and ");
 }
 
-/** One menu per user (§5.7, §5.9): later uncertain items join the open question instead of a second menu. */
+/** An unanswered "Who is this from?" older than this is closed: its items wait in To file on the web, and new forwards get a fresh menu. */
+const PENDING_STALE_MS = Number(process.env.PENDING_STALE_MS ?? 10 * 60_000);
+
+/** One menu per user (§5.7, §5.9): uncertain items sent within a few minutes join the open question, and the menu is
+ *  sent again with them (WeChat users don't scroll back to an old menu). An old unanswered question is closed instead. */
 function askWho(db: DB, ws: string, userId: string, msgs: MsgRow[], clues: Clue[], o: { conflict: string | null; newName: string | null; newKind: EntityKind | null }): OutgoingReply[] {
   const translations = msgs.map(extractedOf).filter((x): x is Extracted & { type: "text" } => x?.type === "text").map((x) => formatTranslation(x.data));
   const summaries = msgs.map(extractedOf).filter((x): x is Extracted & { type: "document" } => x?.type === "document").map((x) => `📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`);
-  const existing = openPending(db, userId);
-  if (existing?.awaiting === "entity_choice") {
-    const ids = [...JSON.parse(existing.message_ids), ...msgs.map((m) => m.id)];
-    const st = JSON.parse(existing.clues_json) as PendingState;
-    db.prepare(`UPDATE pending_groups SET message_ids = ?, clues_json = ? WHERE id = ?`).run(JSON.stringify(ids), JSON.stringify({ ...st, clues: [...st.clues, ...clues], conflict: st.conflict ?? o.conflict, newName: st.newName ?? o.newName, newKind: st.newKind ?? o.newKind }), existing.id);
-    return [{ kind: "text", text: [...summaries, ...translations, `📥 Added to the ${ids.length} items waiting — tap who it's from in the menu above.`].join("\n\n") }];
+  let existing = openPending(db, userId);
+  if (existing?.awaiting === "entity_choice" && Date.now() - +new Date(existing.menu_sent_at) > PENDING_STALE_MS) {
+    db.prepare(`UPDATE pending_groups SET status = 'expired' WHERE id = ?`).run(existing.id); // its messages stay pending → To file
+    existing = undefined;
   }
-  const r = resolveEntity(db, { workspaceId: ws, clues, recentEntityId: recentEntity(db, ws), preferKinds: kindsForContent(msgs) });
-  const st: PendingState = { clues, conflict: o.conflict ?? r.conflict, newName: o.newName ?? r.newName, newKind: o.newKind ?? r.newKind };
-  db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
-    .run(newId("pg"), userId, JSON.stringify(msgs.map((m) => m.id)), JSON.stringify(r.candidates.map((c) => c.id)), JSON.stringify(st), "entity_choice", nowIso());
+  let groupMsgIds = msgs.map((m) => m.id);
+  let st: PendingState;
+  let joinedCount = 0;
+  if (existing?.awaiting === "entity_choice") {
+    groupMsgIds = [...JSON.parse(existing.message_ids), ...groupMsgIds];
+    const prev = JSON.parse(existing.clues_json) as PendingState;
+    st = { ...prev, clues: [...prev.clues, ...clues], conflict: prev.conflict ?? o.conflict, newName: prev.newName ?? o.newName, newKind: prev.newKind ?? o.newKind };
+    joinedCount = groupMsgIds.length;
+  } else st = { clues, conflict: o.conflict, newName: o.newName, newKind: o.newKind };
+
+  const r = resolveEntity(db, { workspaceId: ws, clues: st.clues, recentEntityId: recentEntity(db, ws), preferKinds: kindsForContent(msgs) });
+  st = { ...st, conflict: st.conflict ?? r.conflict, newName: st.newName ?? r.newName, newKind: st.newKind ?? r.newKind };
+  if (existing) {
+    db.prepare(`UPDATE pending_groups SET message_ids = ?, candidate_ids = ?, clues_json = ?, menu_sent_at = ? WHERE id = ?`)
+      .run(JSON.stringify(groupMsgIds), JSON.stringify(r.candidates.map((c) => c.id)), JSON.stringify(st), nowIso(), existing.id);
+  } else {
+    db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
+      .run(newId("pg"), userId, JSON.stringify(groupMsgIds), JSON.stringify(r.candidates.map((c) => c.id)), JSON.stringify(st), "entity_choice", nowIso());
+  }
   const guess = r.guessId ? r.candidates.find((c) => c.id === r.guessId) : undefined;
   const lines = [...summaries, ...translations];
-  const what = describeItems(msgs);
+  const what = joinedCount ? `${joinedCount} items in a row` : describeItems(msgs);
+  if (joinedCount) lines.push(`📥 Together with what you sent just before, ${joinedCount} items are waiting. They'll all be filed under the one you pick.`);
   if (st.conflict) lines.push(`⚠️ ${st.conflict}\nI saved nothing yet. Who is this from?`);
   else if (st.newName) lines.push(`I received ${what} from ${st.newName}, who isn't in your contacts yet.\nWho is this from?`);
   else if (guess) lines.push(`I received ${what}, but I can't find the company name.\nWho is this from? I think it's ${guess.label} — ${r.guessReason}.`);

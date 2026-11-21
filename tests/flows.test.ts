@@ -44,9 +44,12 @@ describe("sourcing demo script", async () => {
     expect(db.prepare(`SELECT COUNT(*) AS n FROM facts WHERE quote_original = '每个4.2美金'`).get()).toEqual({ n: 0 });
   });
 
-  it("a second uncertain message joins the same question", async () => {
+  it("a second uncertain message joins the same question and the menu is sent again", async () => {
     const [r] = await send([{ kind: "text", text: "亲，包装是白盒，50个一箱。" }]);
-    expect(r.text).toContain("menu above");
+    expect(r.kind).toBe("menu");
+    expect(r.text).toContain("2 items are waiting");
+    expect(r.buttons![0].id).toBe(`ent:${s1}`);
+    expect(r.buttons!.map((b) => b.id)).toEqual(expect.arrayContaining(["ent:new", "ent:skip"]));
   });
 
   it("tap Seller 1 → filed under the charger purchase, 4.50 superseded by 4.20, promise tracked", async () => {
@@ -99,6 +102,18 @@ describe("sourcing demo script", async () => {
     const item: Item = { kind: "text", text: "What did Seller 2 quote?", externalMsgId: "wx-1" };
     expect(await send([item])).toHaveLength(1);
     expect(await send([item])).toHaveLength(0);
+  });
+
+  it("an unanswered question from hours ago is closed: a new forward gets its own menu, the old items wait in To file", async () => {
+    const [first] = await send([{ kind: "text", text: "亲，样品下周一寄出。" }]);
+    expect(first.kind).toBe("menu");
+    const old = db.prepare(`SELECT id FROM pending_groups WHERE status = 'open' AND awaiting = 'entity_choice'`).get() as { id: string };
+    db.prepare(`UPDATE pending_groups SET menu_sent_at = ? WHERE id = ?`).run(new Date(Date.now() - 3 * 3600_000).toISOString(), old.id);
+    const [next] = await send([{ kind: "text", text: "亲，模具费可以免掉。" }]);
+    expect(next.kind).toBe("menu");
+    expect(next.text).not.toContain("items are waiting");
+    expect((db.prepare(`SELECT status FROM pending_groups WHERE id = ?`).get(old.id) as { status: string }).status).toBe("expired");
+    expect((db.prepare(`SELECT COUNT(*) AS n FROM messages WHERE text_original = '亲，样品下周一寄出。' AND status = 'pending'`).get() as { n: number }).n).toBe(1);
   });
 });
 
