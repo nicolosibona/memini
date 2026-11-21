@@ -187,7 +187,38 @@ export function userContent(text: string, imageDataUrls?: string[], pdfBase64?: 
   return content;
 }
 
-async function callAnthropic<T>({ step, system, text, imageDataUrls, pdfBase64, schema }: CallArgs<T>): Promise<T> {
+/** The hackathon gateway drops output_config.format (verified 2026-11-21: it returns prose), so through the gateway the
+ *  schema goes into the system prompt and the reply is parsed and Zod-validated. GATEWAY_STRUCTURED_OUTPUTS=1 restores
+ *  native structured outputs for a gateway that forwards them. */
+const schemaInPrompt = provider === "gateway" && process.env.GATEWAY_STRUCTURED_OUTPUTS !== "1";
+
+async function callAnthropic<T>(args: CallArgs<T>): Promise<T> {
+  return schemaInPrompt ? callAnthropicSchemaInPrompt(args) : callAnthropicStructured(args);
+}
+
+async function callAnthropicSchemaInPrompt<T>({ step, system, text, imageDataUrls, pdfBase64, schema }: CallArgs<T>): Promise<T> {
+  const client = await anthropicClient();
+  const model = modelFor(step);
+  const t0 = Date.now();
+  const res = await client.messages.create({
+    model,
+    max_tokens: step === "intent" ? 1024 : 16000,
+    // schema is fixed per step, so the whole system prompt stays cacheable
+    system: [{
+      type: "text",
+      text: `${system}\n\nReply with ONLY one JSON object (no prose, no Markdown fences) that matches this JSON Schema exactly, using these field names and allowed values:\n${JSON.stringify(z.toJSONSchema(schema))}`,
+      cache_control: { type: "ephemeral" },
+    }],
+    output_config: { effort: effortFor(step) },
+    messages: [{ role: "user", content: userContent(text, imageDataUrls, pdfBase64) }],
+  });
+  logCall({ step, model, source: "live", ms: Date.now() - t0, usage: res.usage });
+  if (res.stop_reason === "refusal") throw new Error("model refused");
+  if (res.stop_reason === "max_tokens") throw new Error("output truncated (max_tokens)");
+  return parseLenient(res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""), schema);
+}
+
+async function callAnthropicStructured<T>({ step, system, text, imageDataUrls, pdfBase64, schema }: CallArgs<T>): Promise<T> {
   const client = await anthropicClient();
   const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
   const model = modelFor(step);
