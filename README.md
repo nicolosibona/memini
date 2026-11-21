@@ -4,7 +4,7 @@ Bilingual assistant for foreigners doing business in China — a web app + a WeC
 It started as a sourcing tool (suppliers, quotes, proformas) and is now generic: **contacts, matters, documents, facts, deadlines, checks**,
 scoped by a workspace **profile** ("Sourcing buyer" or "Doing business in China").
 
-Product background: [`memini_blueprint.md`](memini_blueprint.md).
+See the [product blueprint](memini_blueprint.md) and [roadmap](ROADMAP.md).
 
 ## Run it
 
@@ -24,7 +24,7 @@ The app seeds demo data on first run. Switch profile and reload demo data in **S
 | Concept | What it is | Where |
 |---|---|---|
 | **Contact** (entity) | Anyone you deal with: supplier, landlord, tax office, accountant, bank — and yourself / your company | `lib/core/entities.ts` |
-| **Matter** (pratica) | A case: a purchase of one product, a residence-permit renewal, a lease, tax filings… Each kind has a playbook with a document checklist | `lib/core/matters.ts`, `lib/core/domain.ts` |
+| **Matter** | A case such as a product purchase, residence permit renewal, lease, or tax filing. Each kind has a playbook with a document checklist. | `lib/core/matters.ts`, `lib/core/domain.ts` |
 | **Document** | Anything forwarded/uploaded, read by AI into parties + facts + dated tasks | `lib/core/extract.ts` |
 | **Fact** | One value with its source and quote (price, rent, deadline, expiry…). Never overwritten | `lib/core/facts.ts` |
 | **Task** | Every date: their promises, official deadlines, renewals derived from expiry dates, recurring rent | `lib/core/tasks.ts` |

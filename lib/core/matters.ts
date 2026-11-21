@@ -1,4 +1,4 @@
-// Matters (pratiche): the unit of work. A purchase from a supplier, a residence-permit renewal, an office lease,
+// A matter is a unit of work. Examples include a purchase from a supplier, a residence permit renewal, an office lease,
 // monthly tax filings… Each kind has a playbook (domain.ts) with a document checklist.
 import type { DB } from "@/lib/db";
 import { newId, nowIso } from "@/lib/db";
