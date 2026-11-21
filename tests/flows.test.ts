@@ -126,15 +126,15 @@ describe("China business flow", async () => {
     expect(openAlerts(db, { workspaceId: DEMO_WORKSPACE }).map((a) => a.code)).toContain("DEADLINE_SOON");
   });
 
-  it("progressive replies: ⏳ at once, what arrived before the checks, and the final reply doesn't repeat it", async () => {
+  it("progressive replies: Thinking... at once, what arrived before the checks, and the final reply doesn't repeat it", async () => {
     const early: string[] = [];
     const [r] = await handleIncoming({
       userId: DEMO_USER, channel: "wecom", items: [{ kind: "file", filePath: demoFile("office_lease_contract.html") }],
       progress: { ack: true, send: async (x) => { early.push(x.text); } },
     }, db);
-    expect(early[0]).toBe("⏳ Reading the document…");
+    expect(early[0]).toBe("Thinking...");
     expect(early[1]).toMatch(/^📄 Office lease JA-2026-1203/);
-    expect(early[1]).toContain("⏳ Checking it against what you have…");
+    expect(early[1]).toMatch(/Thinking\.\.\.$/);
     expect(r.text).toContain("3 RED FLAGS");
     expect(r.text).not.toContain("📄 Office lease JA-2026-1203");
   });

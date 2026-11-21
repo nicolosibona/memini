@@ -179,7 +179,7 @@ async function flush(ext: string) {
 async function process_(db: DB, ext: string, openKfId: string, items: IncomingItem[], welcomeCode?: string) {
   const isEvent = items.every((i) => i.kind === "event");
   try {
-    // progressive replies: "⏳ …" at once, then the fast translation, then the full answer (each counts toward the send budget)
+    // progressive replies: "Thinking..." at once, then the fast translation, then the full answer (each counts toward the send budget)
     // WECOM_PROGRESS=0: one reply at the end, as before
     const progress = isEvent || process.env.WECOM_PROGRESS === "0" ? undefined : { ack: true, send: (r: OutgoingReply) => send(db, ext, openKfId, [r]) };
     const replies = await handleIncoming({ userId: userFor(db, ext), channel: "wecom", items, progress }, db);

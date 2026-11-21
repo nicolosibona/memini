@@ -38,10 +38,11 @@ export type IncomingItem = {
 export type { OutgoingReply } from "./reply";
 
 /** Progressive replies (chat channels): the channel passes `send`, and the core sends short messages while it works —
- *  "⏳ Reading…", then a fast translation — and leaves out of the final reply what was already shown. */
+ *  "Thinking...", then a fast translation — and leaves out of the final reply what was already shown. */
 export type Progress = { send: (r: OutgoingReply) => Promise<void>; ack?: boolean };
 type ProgressCtx = Progress & { shownTr: Set<string>; shownDoc: Set<string>; pending: Promise<unknown>[] };
 const progressStore = new AsyncLocalStorage<ProgressCtx>();
+const THINKING = process.env.PROGRESS_TEXT ?? "Thinking...";
 const px = () => progressStore.getStore();
 async function ack(text: string) {
   const c = px();
@@ -94,7 +95,7 @@ async function handleIncomingInner(input: { userId: string; channel: Channel; it
   const menu = items.find((i) => i.menuId);
   if (menu) {
     logRaw(db, ws, input, [menu], "menu_reply");
-    if (/^(ent|mat):/.test(menu.menuId!) && menu.menuId !== "ent:skip") await ack("⏳ Filing it and checking against what you have…");
+    if (/^(ent|mat):/.test(menu.menuId!) && menu.menuId !== "ent:skip") await ack(THINKING);
     return handleMenu(db, ws, input.userId, menu.menuId!);
   }
   const ev = items.find((i) => i.kind === "event");
@@ -118,13 +119,12 @@ async function handleIncomingInner(input: { userId: string; channel: Channel; it
   const intent = await classifyIntent(text, msgs.map((m) => m.kind));
   if (intent.intent === "question" && intent.confidence >= 0.7) {
     setStatus(db, msgs, "question", "skipped");
-    await ack("⏳ Looking through your records…");
+    await ack(THINKING);
     return [{ kind: "text", text: (await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text }];
   }
   if (intent.intent === "content") {
     setStatus(db, msgs, "content", "pending");
-    const docs = msgs.filter((m) => m.kind === "image" || m.kind === "file").length;
-    await ack(docs ? `⏳ Reading the document${docs > 1 ? "s" : ""}…` : msgs.some((m) => isChinese(m.text_original ?? "")) ? "⏳ Translating and checking…" : "⏳ Reading it…");
+    await ack(THINKING);
     return processContent(db, ws, input.userId, msgs);
   }
   // unsure (D7 default: ask)
@@ -249,7 +249,7 @@ async function sendInterim(msgs: MsgRow[]) {
     if (x?.type === "document" && !ctx.shownDoc.has(m.id)) { lines.push(`📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`); ctx.shownDoc.add(m.id); }
     if (x?.type === "text" && !ctx.shownTr.has(m.id) && x.data.translation) { lines.push(`🇬🇧 ${x.data.translation}`); ctx.shownTr.add(m.id); }
   }
-  if (lines.length) await ctx.send({ kind: "text", text: `${lines.join("\n\n")}\n\n⏳ Checking it against what you have…` }).catch(() => {});
+  if (lines.length) await ctx.send({ kind: "text", text: `${lines.join("\n\n")}\n\n${THINKING}` }).catch(() => {});
 }
 
 /** Which kinds of counterparty usually send this content: only orders the "Who is this from?" menu. */
