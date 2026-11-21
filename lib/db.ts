@@ -1,5 +1,5 @@
 // SQLite memory — generic model (blueprint §4 generalized):
-//   entities (any counterparty, incl. yourself) · matters (pratiche/cases) · documents · facts · tasks (deadlines) · alerts
+//   entities (any counterparty, including yourself) · matters (cases) · documents · facts · tasks (deadlines) · alerts
 // Tests call openDb(":memory:"); the app uses getDb() (DB_PATH, default ./storage/memini.db).
 import Database from "better-sqlite3";
 import fs from "node:fs";

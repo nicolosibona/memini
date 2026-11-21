@@ -1,5 +1,5 @@
 // Domain registry: the ONE place that says what kinds of things Memini organizes.
-// The core is generic: counterparties (entities), matters (pratiche/cases), documents, facts, tasks/deadlines, alerts.
+// The core is generic: counterparties (entities), matters (cases), documents, facts, tasks/deadlines, alerts.
 // A workspace PROFILE decides which matter kinds are active; adding a new kind of bureaucracy = adding config here.
 
 // ── profiles (each user has a different scope) ──
@@ -78,7 +78,7 @@ export const DOC_TYPES = {
 export type DocType = keyof typeof DOC_TYPES;
 export const DOC_TYPE_KEYS = Object.keys(DOC_TYPES) as [DocType, ...DocType[]];
 
-// ── matters (pratiche) and their playbooks ──
+// ── matters and their playbooks ──
 type ChecklistItem = { doc: DocType; required: boolean; note?: string };
 type MatterDef = { label: string; icon: string; titleHint: string; checklist: ChecklistItem[]; counterpartyKinds: EntityKind[] };
 export const MATTER_KINDS = {
