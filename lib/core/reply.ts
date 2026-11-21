@@ -35,8 +35,8 @@ export function consistentTerms(facts: FactRow[]): string {
   return ok.length ? `✅ Consistent: ${ok.join(" · ")}` : "";
 }
 
-export function formatTranslation(x: TextExtraction): string {
-  const parts = [`🇬🇧 ${x.translation}`];
+export function formatTranslation(x: TextExtraction, o: { translation?: boolean } = {}): string {
+  const parts = o.translation === false ? [] : [`🇬🇧 ${x.translation}`];
   if (x.subtext.length) parts.push(`💡 Between the lines:\n${x.subtext.map((s) => `• ${s.phrase} → ${s.meaning}`).join("\n")}`);
   return parts.join("\n\n");
 }

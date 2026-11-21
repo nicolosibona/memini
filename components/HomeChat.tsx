@@ -91,9 +91,38 @@ export function HomeChat({ eyebrow, greeting, prompt, suggestions, children }: {
       const r = body instanceof FormData
         ? await fetch("/api/chat", { method: "POST", body })
         : await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const j = await r.json().catch(() => ({ error: r.statusText }));
-      if (!r.ok) throw new Error(j.error ?? r.statusText);
-      setTurns((t) => [...t, { role: "bot", replies: j.replies ?? [], ms: j.ms }]);
+      if (!r.ok || !r.body) {
+        const j = await r.json().catch(() => ({ error: r.statusText }));
+        throw new Error(j.error ?? r.statusText);
+      }
+      // NDJSON stream: each reply appears as soon as it's ready (the translation first), in one bot turn
+      let started = false;
+      const addReply = (reply: OutgoingReply) => setTurns((t) => {
+        if (!started) { started = true; return [...t, { role: "bot", replies: [reply] }]; }
+        const last = t[t.length - 1];
+        return last?.role === "bot" ? [...t.slice(0, -1), { ...last, replies: [...last.replies, reply] }] : [...t, { role: "bot", replies: [reply] }];
+      });
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (value) buf += dec.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line) as { type: "reply"; reply: OutgoingReply } | { type: "done"; ms: number } | { type: "error"; error: string };
+          if (ev.type === "reply") addReply(ev.reply);
+          else if (ev.type === "error") throw new Error(ev.error);
+          else setTurns((t) => {
+            const last = t[t.length - 1];
+            return last?.role === "bot" && started ? [...t.slice(0, -1), { ...last, ms: ev.ms }] : [...t, { role: "bot", replies: [], ms: ev.ms }];
+          });
+        }
+        if (done) break;
+      }
       router.refresh();
     } catch (e) {
       setTurns((t) => [...t, { role: "error", text: e instanceof Error ? e.message : String(e) }]);
@@ -202,8 +231,8 @@ export function HomeChat({ eyebrow, greeting, prompt, suggestions, children }: {
               ),
             )}
             {busy && (
-              <div className="flex gap-3.5 items-center">
-                <Mark size="sm" />
+              <div className={`flex gap-3.5 items-center ${turns[turns.length - 1]?.role === "bot" ? "pl-[42px] -mt-6" : ""}`}>
+                {turns[turns.length - 1]?.role !== "bot" && <Mark size="sm" />}
                 <span className="typing text-[22px] leading-none text-muted tracking-widest"><span>·</span><span>·</span><span>·</span></span>
               </div>
             )}

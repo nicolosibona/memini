@@ -16,7 +16,7 @@ export default async function SettingsPage() {
   const profile = workspaceProfile(db);
   const spend = db.prepare(`SELECT step, model, source, COUNT(*) AS n, SUM(est_cost_usd) AS usd, AVG(ms) AS ms FROM llm_calls GROUP BY step, model, source ORDER BY usd DESC`).all() as { step: string; model: string; source: string; n: number; usd: number; ms: number }[];
   const total = spend.reduce((s, r) => s + (r.usd ?? 0), 0);
-  const steps = ["intent", "extract", "analyze", "draft", "assistant", "asr"] as const;
+  const steps = ["intent", "translate", "extract", "analyze", "draft", "assistant", "asr"] as const;
 
   return (
     <Page narrow>

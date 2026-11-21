@@ -12,9 +12,10 @@ export const provider = (process.env.LLM_PROVIDER ?? "mock") as LlmProvider;
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 8000);
 
 /** Pipeline step → model, from env (MODEL_INTENT, MODEL_EXTRACT, …), so the bake-off result is config, not code. */
-export type LlmStep = "intent" | "extract" | "analyze" | "draft" | "assistant" | "asr";
+export type LlmStep = "intent" | "translate" | "extract" | "analyze" | "draft" | "assistant" | "asr";
 const DEFAULT_MODEL: Record<LlmStep, string> = {
   intent: "claude-haiku-5-5",
+  translate: "claude-opus-5-5",
   extract: "claude-opus-5-5",
   analyze: "claude-opus-5-5",
   draft: "claude-opus-5-5",

@@ -5,12 +5,13 @@
 //         → facts + tasks + aliases → audit → reply (alerts, consistent terms, next steps, Chinese draft)
 import fs from "node:fs";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getDb, newId, nowIso, today, type DB } from "@/lib/db";
 import { transcribe } from "@/lib/adapters/asr";
 import { addFacts, formatValue, parseValue, factLabel, fmtDay, type FactRow } from "./facts";
 import { runAudit, openAlerts, type AlertRow } from "./audit";
 import { classifyIntent, commandOf } from "./intent";
-import { documentClues, documentFacts, documentPerson, extractDocument, extractText, textFacts } from "./extract";
+import { documentClues, documentFacts, documentPerson, extractDocument, extractText, quickTranslate, textFacts } from "./extract";
 import { createEntity, entityLabel, getEntity, kindForRole, learnAliases, listEntities, ownNames, resolveEntity, type Clue } from "./entities";
 import { createMatter, getMatter, pickMatter, touchMatter, matterChecklist, type MatterRow } from "./matters";
 import { addTask, deriveDocumentTasks, deriveFactTasks, ensureRecurring, listTasks } from "./tasks";
@@ -18,7 +19,7 @@ import { analysisButtons, canReplyTo, consistentTerms, detailsLine, draftReply, 
 import { indexText, reindexScope, entityProfile } from "./memory";
 import { ask } from "./assistant";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type EntityKind, type MatterKind } from "./domain";
-import { nameSimilarity } from "./normalize";
+import { isChinese, nameSimilarity } from "./normalize";
 import type { DocumentExtraction, TextExtraction } from "./schemas";
 
 export type Channel = "wecom" | "web_upload" | "web_chat" | "sim";
@@ -35,6 +36,17 @@ export type IncomingItem = {
   transcriptHint?: string; // simulator: transcript used for a voice item without ASR
 };
 export type { OutgoingReply } from "./reply";
+
+/** Progressive replies (chat channels): the channel passes `send`, and the core sends short messages while it works —
+ *  "⏳ Reading…", then a fast translation — and leaves out of the final reply what was already shown. */
+export type Progress = { send: (r: OutgoingReply) => Promise<void>; ack?: boolean };
+type ProgressCtx = Progress & { shownTr: Set<string>; shownDoc: Set<string>; pending: Promise<unknown>[] };
+const progressStore = new AsyncLocalStorage<ProgressCtx>();
+const px = () => progressStore.getStore();
+async function ack(text: string) {
+  const c = px();
+  if (c?.ack) await c.send({ kind: "text", text }).catch(() => {});
+}
 
 type MsgRow = {
   id: string; workspace_id: string; user_id: string | null; channel: string; group_id: string; kind: string; intent: string | null; original_author: string | null;
@@ -68,13 +80,23 @@ const wsOf = (db: DB, userId: string) => {
 };
 const profileKey = (db: DB, ws: string) => (db.prepare(`SELECT profile FROM workspaces WHERE id = ?`).get(ws) as { profile: string } | undefined)?.profile ?? "china_business";
 
-export async function handleIncoming(input: { userId: string; channel: Channel; items: IncomingItem[] }, db: DB = getDb()): Promise<OutgoingReply[]> {
+export async function handleIncoming(input: { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress }, db: DB = getDb()): Promise<OutgoingReply[]> {
+  if (!input.progress) return handleIncomingInner(input, db);
+  const ctx: ProgressCtx = { ...input.progress, shownTr: new Set(), shownDoc: new Set(), pending: [] };
+  return progressStore.run(ctx, () => handleIncomingInner(input, db));
+}
+
+async function handleIncomingInner(input: { userId: string; channel: Channel; items: IncomingItem[] }, db: DB): Promise<OutgoingReply[]> {
   const ws = wsOf(db, input.userId);
   const items = input.items.filter((it) => !it.externalMsgId || !db.prepare(`SELECT 1 FROM messages WHERE external_msgid = ?`).get(it.externalMsgId)); // WeCom retries
   if (!items.length) return [];
 
   const menu = items.find((i) => i.menuId);
-  if (menu) { logRaw(db, ws, input, [menu], "menu_reply"); return handleMenu(db, ws, input.userId, menu.menuId!); }
+  if (menu) {
+    logRaw(db, ws, input, [menu], "menu_reply");
+    if (/^(ent|mat):/.test(menu.menuId!) && menu.menuId !== "ent:skip") await ack("⏳ Filing it and checking against what you have…");
+    return handleMenu(db, ws, input.userId, menu.menuId!);
+  }
   const ev = items.find((i) => i.kind === "event");
   if (ev) return ev.event === "enter_session" ? [welcome(profileKey(db, ws))] : [];
 
@@ -96,10 +118,13 @@ export async function handleIncoming(input: { userId: string; channel: Channel; 
   const intent = await classifyIntent(text, msgs.map((m) => m.kind));
   if (intent.intent === "question" && intent.confidence >= 0.7) {
     setStatus(db, msgs, "question", "skipped");
+    await ack("⏳ Looking through your records…");
     return [{ kind: "text", text: (await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text }];
   }
   if (intent.intent === "content") {
     setStatus(db, msgs, "content", "pending");
+    const docs = msgs.filter((m) => m.kind === "image" || m.kind === "file").length;
+    await ack(docs ? `⏳ Reading the document${docs > 1 ? "s" : ""}…` : msgs.some((m) => isChinese(m.text_original ?? "")) ? "⏳ Translating and checking…" : "⏳ Reading it…");
     return processContent(db, ws, input.userId, msgs);
   }
   // unsure (D7 default: ask)
@@ -147,6 +172,19 @@ function cluesOf(m: MsgRow, x: Extracted): Clue[] {
 }
 
 async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]): Promise<OutgoingReply[]> {
+  // 0. chat channels: one fast translation of all the Chinese text, sent as soon as it's ready (the full reading takes longer)
+  const ctx = px();
+  let extracted = false;
+  const zh = msgs.filter((m) => ["text", "merged", "voice"].includes(m.kind) && isChinese(m.text_original ?? ""));
+  if (ctx && zh.length) {
+    const joined = zh.map((m) => (m.original_author ? `${m.original_author}: ${m.text_original}` : m.text_original)).join("\n");
+    ctx.pending.push(quickTranslate(joined).then(async (t) => {
+      if (!t || extracted) return; // the full reading won the race: it carries the translation itself
+      for (const m of zh) ctx.shownTr.add(m.id);
+      await ctx.send({ kind: "text", text: `🇬🇧 ${t}` });
+    }).catch(() => {}));
+  }
+
   // 1. normalize + extract every item (in parallel)
   await Promise.all(msgs.map(async (m) => {
     const meta = m.extracted_json ? JSON.parse(m.extracted_json) : {};
@@ -167,6 +205,8 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
     m.extracted_json = JSON.stringify(x);
     db.prepare(`UPDATE messages SET extracted_json = ? WHERE id = ?`).run(m.extracted_json, m.id);
   }));
+  extracted = true;
+  if (ctx) await Promise.all(ctx.pending); // keep the order: the translation goes out before anything below
 
   // 2. your own documents (passport, permit…) go to you — identified by name/ID number, not guessed
   const own = ownNames(db, ws);
@@ -179,6 +219,7 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
     const person = existing.certainId && SELF_KINDS.includes(getEntity(db, existing.certainId)!.kind) ? existing.certainId
       : listEntities(db, ws, { kinds: ["self_person"], includeSelf: true }).find((e) => nameSimilarity(e.display_name, p.name) >= 0.9 || (p.name_alt && nameSimilarity(e.display_name, p.name_alt) >= 0.9))?.id
       ?? createEntity(db, ws, { kind: "self_person", display_name: p.name_alt && !/[一-鿿]/.test(p.name_alt) ? p.name_alt : p.name, id_number: p.id_number }).id;
+    await sendInterim([m]);
     replies.push(...(await assign(db, ws, userId, [m], person, documentClues(x.data), "document")));
   }
 
@@ -191,11 +232,24 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
   if (idMsgs.length) {
     const clues = idMsgs.flatMap((m) => cluesOf(m, extractedOf(m)!));
     const r = resolveEntity(db, { workspaceId: ws, clues, recentEntityId: recentEntity(db, ws) });
-    if (r.certainId) replies.push(...(await assign(db, ws, userId, idMsgs, r.certainId, clues, "document")));
+    if (r.certainId) { await sendInterim(idMsgs); replies.push(...(await assign(db, ws, userId, idMsgs, r.certainId, clues, "document"))); }
     else { toPending.unshift(...idMsgs); ({ conflict, newName, newKind } = r); }
   }
   if (toPending.length) replies.push(...askWho(db, ws, userId, toPending, toPending.flatMap((m) => cluesOf(m, extractedOf(m)!)), { conflict, newName, newKind }));
   return replies;
+}
+
+/** Chat channels: before the slow part (checks + Chinese draft), say what arrived — unless it was already shown. */
+async function sendInterim(msgs: MsgRow[]) {
+  const ctx = px();
+  if (!ctx) return;
+  const lines: string[] = [];
+  for (const m of msgs) {
+    const x = extractedOf(m);
+    if (x?.type === "document" && !ctx.shownDoc.has(m.id)) { lines.push(`📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`); ctx.shownDoc.add(m.id); }
+    if (x?.type === "text" && !ctx.shownTr.has(m.id) && x.data.translation) { lines.push(`🇬🇧 ${x.data.translation}`); ctx.shownTr.add(m.id); }
+  }
+  if (lines.length) await ctx.send({ kind: "text", text: `${lines.join("\n\n")}\n\n⏳ Checking it against what you have…` }).catch(() => {});
 }
 
 /** Which kinds of counterparty usually send this content: only orders the "Who is this from?" menu. */
@@ -222,8 +276,9 @@ const PENDING_STALE_MS = Number(process.env.PENDING_STALE_MS ?? 10 * 60_000);
 /** One menu per user (§5.7, §5.9): uncertain items sent within a few minutes join the open question, and the menu is
  *  sent again with them (WeChat users don't scroll back to an old menu). An old unanswered question is closed instead. */
 function askWho(db: DB, ws: string, userId: string, msgs: MsgRow[], clues: Clue[], o: { conflict: string | null; newName: string | null; newKind: EntityKind | null }): OutgoingReply[] {
-  const translations = msgs.map(extractedOf).filter((x): x is Extracted & { type: "text" } => x?.type === "text").map((x) => formatTranslation(x.data));
-  const summaries = msgs.map(extractedOf).filter((x): x is Extracted & { type: "document" } => x?.type === "document").map((x) => `📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`);
+  const shown = px();
+  const translations = msgs.flatMap((m) => { const x = extractedOf(m); return x?.type === "text" ? [formatTranslation(x.data, { translation: !shown?.shownTr.has(m.id) })] : []; }).filter(Boolean);
+  const summaries = msgs.flatMap((m) => { const x = extractedOf(m); return x?.type === "document" && !shown?.shownDoc.has(m.id) ? [`📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`] : []; });
   let existing = openPending(db, userId);
   if (existing?.awaiting === "entity_choice" && Date.now() - +new Date(existing.menu_sent_at) > PENDING_STALE_MS) {
     db.prepare(`UPDATE pending_groups SET status = 'expired' WHERE id = ?`).run(existing.id); // its messages stay pending → To file
@@ -315,6 +370,7 @@ async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entity
   const saved: FactRow[] = [];
   const translations: TextExtraction[] = [];
   const docs: DocumentExtraction[] = [];
+  const trShown: boolean[] = [], docShown: boolean[] = []; // already sent as a progress message
   for (const m of msgs) {
     const matter = matterFor(m);
     const ctx = { workspaceId: ws, entityId, matterId: matter.id };
@@ -324,6 +380,7 @@ async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entity
     if (!x) continue;
     if (x.type === "document") {
       docs.push(x.data);
+      docShown.push(!!px()?.shownDoc.has(m.id));
       db.prepare(`UPDATE documents SET entity_id = ?, matter_id = ? WHERE id = ?`).run(entityId, matter.id, x.document_id);
       reindexScope(db, { type: "document", id: x.document_id }, entityId, matter.id);
       const r = addFacts(db, ctx, documentFacts(x.data, { documentId: x.document_id, messageId: m.id, statedAt: m.received_at }));
@@ -334,6 +391,7 @@ async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entity
       if (x.data.expiry_date && !matter.target_date && ["residence_permit", "company"].includes(matter.kind)) db.prepare(`UPDATE matters SET target_date = ? WHERE id = ?`).run(x.data.expiry_date, matter.id);
     } else {
       translations.push(x.data);
+      trShown.push(!!px()?.shownTr.has(m.id));
       const r = addFacts(db, ctx, textFacts(x.data, { messageId: m.id, statedAt: m.received_at, saidBy: x.said_by, sourceType: m.kind === "voice" ? "voice" : "chat" }), m.text_original ?? "");
       saved.push(...r.saved);
       for (const t of x.data.tasks) addTask(db, { ...ctx, messageId: m.id }, { kind: t.kind, who: t.who, what: t.what, due: t.due });
@@ -352,7 +410,7 @@ async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entity
   const asgId = newId("asg");
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'resolved')`)
     .run(asgId, userId, JSON.stringify(msgs.map((m) => m.id)), JSON.stringify([entityId]), JSON.stringify({ clues, learnedAliasIds: learned, entityId, matterIds, createdMatters }), "assignment", nowIso());
-  return [await analysisReply(db, ws, entityId, matterIds, asgId, { saved, translations, docs, newAlerts, prefix })];
+  return [await analysisReply(db, ws, entityId, matterIds, asgId, { saved, translations, docs, newAlerts, prefix, trShown, docShown })];
 }
 
 function askWhichMatter(db: DB, userId: string, msgs: MsgRow[], entityId: string, clues: Clue[], matters: MatterRow[]): OutgoingReply[] {
@@ -364,7 +422,7 @@ function askWhichMatter(db: DB, userId: string, msgs: MsgRow[], entityId: string
   return [{ kind: "menu", text: `This is from ${entityLabel(e)}. Which of their matters is it about?`, buttons: [...matters.map((m) => ({ id: `mat:${m.id}`, label: `${MATTER_KINDS[m.kind].icon} ${m.title}` })), { id: "mat:new", label: "➕ Something new" }] }];
 }
 
-async function analysisReply(db: DB, ws: string, entityId: string, matterIds: string[], asgId: string, o: { saved: FactRow[]; translations: TextExtraction[]; docs: DocumentExtraction[]; newAlerts: AlertRow[]; prefix?: string }): Promise<OutgoingReply> {
+async function analysisReply(db: DB, ws: string, entityId: string, matterIds: string[], asgId: string, o: { saved: FactRow[]; translations: TextExtraction[]; docs: DocumentExtraction[]; newAlerts: AlertRow[]; prefix?: string; trShown?: boolean[]; docShown?: boolean[] }): Promise<OutgoingReply> {
   const p = entityProfile(db, entityId)!;
   const e = p.entity;
   const matters = matterIds.map((id) => getMatter(db, id)!).filter(Boolean);
@@ -387,8 +445,8 @@ async function analysisReply(db: DB, ws: string, entityId: string, matterIds: st
 
   const where = matters.length ? ` · ${matters.map((m) => `${MATTER_KINDS[m.kind].icon} ${m.title}`).join(", ")}` : "";
   const parts = [`${o.prefix ? o.prefix + "\n" : ""}📁 Filed under: ${entityLabel(e)}${where}`];
-  for (const x of o.docs) if (x.summary) parts.push(`📄 ${x.title} — ${x.summary}`);
-  for (const t of o.translations) parts.push(formatTranslation(t));
+  o.docs.forEach((x, i) => { if (x.summary && !o.docShown?.[i]) parts.push(`📄 ${x.title} — ${x.summary}`); });
+  o.translations.forEach((t, i) => { const f = formatTranslation(t, { translation: !o.trShown?.[i] }); if (f) parts.push(f); });
   if (d.summary_en) parts.push(d.summary_en);
   if (fresh.length) parts.push(formatAlerts(fresh));
   else if (stillOpen.length) parts.push(`Still open:\n${formatAlerts(stillOpen)}`);

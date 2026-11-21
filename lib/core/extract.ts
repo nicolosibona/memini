@@ -3,7 +3,8 @@
 // demo files, else a deterministic regex extractor — so the pipeline always yields something checkable.
 import fs from "node:fs";
 import path from "node:path";
-import { callJSON } from "@/lib/adapters/llm";
+import { z } from "zod";
+import { callJSON, provider } from "@/lib/adapters/llm";
 import { DOC_FIXTURES, TEXT_FIXTURES } from "@/data/demo/fixtures";
 import { DocumentExtractionSchema, TextExtractionSchema, type DocumentExtraction, type TextExtraction } from "./schemas";
 import { DOC_TYPES, FACT_DEFS, PARTY_ROLES, type FactKey } from "./domain";
@@ -151,6 +152,19 @@ export async function extractText(text: string, receivedAt: string): Promise<{ d
     fallback: () => fixture ?? heuristicTextExtraction(text, receivedAt), timeoutMs: Number(process.env.LLM_TIMEOUT_ANALYZE_MS ?? 30000),
   });
   return { data: r.data, source: r.source };
+}
+
+/** Fast first answer on chat channels: a plain translation sent while the full reading (facts, subtext, tasks) runs.
+ *  Returns null in mock mode or on failure — the full reading still carries the translation. */
+export async function quickTranslate(text: string): Promise<string | null> {
+  if (provider === "mock" || !isChinese(text)) return null;
+  const r = await callJSON({
+    step: "translate",
+    system: "Translate this message from a Chinese business counterparty into natural, plain English for a foreign business person. Keep every number, price, currency, unit, date and name exactly. No notes or commentary.",
+    text, schema: z.object({ translation: z.string() }), fallback: () => ({ translation: "" }),
+    timeoutMs: Number(process.env.LLM_TIMEOUT_TRANSLATE_MS ?? 12000),
+  });
+  return r.source === "fallback" || !r.data.translation.trim() ? null : r.data.translation.trim();
 }
 
 export function textFacts(x: TextExtraction, ctx: { messageId: string; statedAt: string; saidBy: SaidBy; sourceType: SourceType }): CandidateFact[] {
