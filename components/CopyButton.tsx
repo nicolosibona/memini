@@ -34,7 +34,7 @@ export function CopyButton({ text, label = "Copy", done = "Copied", className = 
         if (ok) onCopied?.();
         setTimeout(() => setState("idle"), 1800);
       }}
-      className={className || "press inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 h-8 text-[13px] font-medium hover:bg-hover"}
+      className={className || "press inline-flex items-center justify-center gap-1.5 rounded-full border border-line bg-card/80 px-4 h-9 text-[13px] font-medium text-ink hover:bg-card hover:border-ink/25"}
     >
       {state === "ok" ? `✓ ${done}` : state === "fail" ? "Long-press the text to copy" : label}
     </button>

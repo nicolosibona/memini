@@ -116,6 +116,19 @@ CREATE TABLE IF NOT EXISTS confirmations (
   action TEXT,             -- confirmed | changes_requested | uploaded
   terms_json TEXT, terms_hash TEXT, note TEXT, message_id TEXT, ip TEXT, user_agent TEXT, created_at TEXT
 );
+-- electronics spec check: one check = our requirement + what the supplier sent, compared line by line (lib/core/spec)
+CREATE TABLE IF NOT EXISTS spec_checks (
+  id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT, part_name TEXT, part_number TEXT, supplier_name TEXT,
+  status TEXT,             -- open | closed
+  created_at TEXT, updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_spec_user ON spec_checks(user_id, status, updated_at);
+CREATE TABLE IF NOT EXISTS spec_items (
+  id TEXT PRIMARY KEY, check_id TEXT, message_id TEXT, ord INTEGER,
+  side TEXT,               -- requirement | supplier
+  kind TEXT, title TEXT, author TEXT, file_path TEXT, text_original TEXT, extracted_json TEXT, source TEXT, created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_spec_items ON spec_items(check_id, ord);
 CREATE TRIGGER IF NOT EXISTS confirmations_no_update BEFORE UPDATE ON confirmations BEGIN SELECT RAISE(ABORT, 'confirmations are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS confirmations_no_delete BEFORE DELETE ON confirmations
   WHEN (SELECT v FROM wecom_state WHERE k = 'allow_reset') IS NOT 'yes' BEGIN SELECT RAISE(ABORT, 'confirmations are immutable'); END;
@@ -124,6 +137,8 @@ CREATE TRIGGER IF NOT EXISTS confirmations_no_delete BEFORE DELETE ON confirmati
 /** Additive migrations, applied once each, in order. Never drop or rewrite user data here. */
 const MIGRATIONS: ((db: DB) => void)[] = [
   // 3: share links, confirmations, inbound tokens — created by SCHEMA (CREATE IF NOT EXISTS); nothing to alter
+  () => {},
+  // 4: electronics spec checks (spec_checks, spec_items) — created by SCHEMA; nothing to alter
   () => {},
 ];
 const SCHEMA_VERSION = BASELINE_VERSION + MIGRATIONS.length;

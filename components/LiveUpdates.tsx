@@ -51,14 +51,14 @@ export function LiveUpdates({ initial }: { initial: string }) {
 
   if (!toast || isPublicPath(path)) return null;
   return (
-    <div className="no-print fixed bottom-5 right-5 left-5 sm:left-auto z-50 toast-in" role="status">
-      <Link href="/" onClick={() => setToast(null)} className="flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3 shadow-[0_12px_40px_-12px_rgb(26_25_23/0.25)] sm:w-[360px]">
+    <div className="no-print fixed bottom-24 right-4 left-4 sm:right-6 sm:left-auto z-50 toast-in" role="status">
+      <Link href="/" onClick={() => setToast(null)} className="flex items-center gap-3 rounded-3xl border border-line bg-card px-4 py-3 shadow-float sm:w-[360px]">
         <span className="grid place-items-center size-9 rounded-full bg-wechat-soft text-wechat-dark shrink-0"><Icon name="wechat" className="size-[18px]" /></span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] text-muted">{KIND[toast.kind] ?? "New item"} from WeChat</span>
-          <span className="block text-[14px] truncate">{toast.text || "Received"}</span>
+          <span className="block text-[12.5px] text-muted">{KIND[toast.kind] ?? "New item"} from WeChat</span>
+          <span className="block text-[14px] text-ink truncate">{toast.text || "Received"}</span>
         </span>
-        <button onClick={(e) => { e.preventDefault(); setToast(null); }} aria-label="Dismiss" className="text-faint hover:text-ink"><Icon name="x" className="size-4" /></button>
+        <button onClick={(e) => { e.preventDefault(); setToast(null); }} aria-label="Dismiss" className="grid place-items-center size-8 rounded-full text-faint hover:text-ink hover:bg-hover"><Icon name="x" className="size-4" /></button>
       </Link>
     </div>
   );

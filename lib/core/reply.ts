@@ -15,7 +15,8 @@ export type Button = { id: string; label: string };
 /** `copy`: Chinese text meant to be sent on as it is. WeChat gets a "📋 Chinese only" button that answers with a clean
  *  bubble holding just that text (easy to long-press → Forward/Copy; the tap also resets WeChat's send budget);
  *  the web chat shows it in its own card with a Copy button. */
-export type OutgoingReply = { kind: "text" | "menu"; text: string; buttons?: Button[]; prompt?: string; copy?: { label: string; text: string } };
+/** `file`: a document Memini made (the verification sheet). WeChat sends it as a file message; the web shows a download card. */
+export type OutgoingReply = { kind: "text" | "menu" | "file"; text: string; buttons?: Button[]; prompt?: string; copy?: { label: string; text: string }; file?: { path: string; name: string; url: string } };
 
 /** The Chinese part of an answer meant to be sent as it is (a draft in an assistant answer): the run of mostly-Chinese
  *  lines. Short quotes inside English sentences (names, phrases) don't count. */

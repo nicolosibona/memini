@@ -12,7 +12,7 @@ export const provider = (process.env.LLM_PROVIDER ?? "mock") as LlmProvider;
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS ?? 8000);
 
 /** Pipeline step → model, from env (MODEL_INTENT, MODEL_EXTRACT, …), so the bake-off result is config, not code. */
-export type LlmStep = "intent" | "translate" | "extract" | "analyze" | "draft" | "assistant" | "asr";
+export type LlmStep = "intent" | "translate" | "extract" | "analyze" | "draft" | "assistant" | "asr" | "spec" | "spec_chat";
 const DEFAULT_MODEL: Record<LlmStep, string> = {
   intent: "claude-haiku-5-5",
   translate: "claude-opus-5-5",
@@ -20,11 +20,14 @@ const DEFAULT_MODEL: Record<LlmStep, string> = {
   analyze: "claude-opus-5-5",
   draft: "claude-opus-5-5",
   assistant: "claude-opus-5-5",
+  spec: "claude-opus-5-5",
+  spec_chat: "claude-haiku-5-5",
   asr: "scribe_v2",
 };
 export function modelFor(step: LlmStep): string {
   if (step === "asr") return process.env.MODEL_ASR ?? DEFAULT_MODEL.asr; // speech-to-text is ElevenLabs, never ANTHROPIC_MODEL
-  return process.env[`MODEL_${step.toUpperCase()}`] ?? (step === "intent" ? DEFAULT_MODEL.intent : process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL[step]);
+  // small, fast steps keep their own default model; the others follow ANTHROPIC_MODEL
+  return process.env[`MODEL_${step.toUpperCase()}`] ?? (step === "intent" || step === "spec_chat" ? DEFAULT_MODEL[step] : process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL[step]);
 }
 type Effort = "low" | "medium" | "high";
 const effortFor = (step: LlmStep): Effort =>

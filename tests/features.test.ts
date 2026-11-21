@@ -295,8 +295,8 @@ describe("database migrations are additive", () => {
     v2.close();
     const db = openDb(file);
     expect((db.prepare(`SELECT display_name FROM entities WHERE id = 'e1'`).get() as { display_name: string }).display_name).toBe("Kept Co");
-    expect(db.pragma("user_version", { simple: true })).toBe(3);
-    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name IN ('share_links','confirmations','inbound_tokens') ORDER BY name`).all()).toHaveLength(3);
+    expect(db.pragma("user_version", { simple: true })).toBe(4);
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name IN ('share_links','confirmations','inbound_tokens','spec_checks','spec_items') ORDER BY name`).all()).toHaveLength(5);
     db.close();
   });
 });

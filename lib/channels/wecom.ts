@@ -51,6 +51,28 @@ async function post<T>(path: string, body: unknown, db: DB = getDb()): Promise<T
   throw new Error("access_token refresh failed");
 }
 
+/** Temporary media (3 days) for a file message: the verification sheet. */
+async function uploadFile(db: DB, filePath: string, name: string): Promise<string> {
+  const fs = await import("node:fs");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const form = new FormData();
+    form.append("media", new Blob([fs.readFileSync(filePath)]), name);
+    const res = await fetch(`${API}/media/upload?access_token=${await accessToken(db)}&type=file`, { method: "POST", body: form });
+    const j = (await res.json()) as { errcode?: number; errmsg?: string; media_id?: string };
+    if (j.errcode === 42001 || j.errcode === 40014) { state.set(db, "access_token_exp", "0"); continue; }
+    if (j.errcode || !j.media_id) throw new WecomError(j.errcode ?? -1, j.errmsg ?? "upload failed");
+    return j.media_id;
+  }
+  throw new Error("access_token refresh failed");
+}
+
+/** A file payload is kept as a local path until it is sent (held payloads too): upload right before sending. */
+async function materialize(db: DB, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const local = payload.local_file as { path: string; name: string } | undefined;
+  if (!local) return payload;
+  return { msgtype: "file", file: { media_id: await uploadFile(db, local.path, local.name) } };
+}
+
 /** msg_send_fail.fail_type (WeCom kf docs) */
 const SEND_FAIL: Record<number, string> = {
   0: "unknown", 1: "customer-service account deleted", 2: "app closed", 4: "session expired", 5: "session closed", 6: "over the 5-message limit",
@@ -170,7 +192,7 @@ async function enqueue(db: DB, m: KfMsg, fallbackOpenKfId = "") {
   // menu taps and events are answered at once (after flushing what's buffered, to keep order)
   if (items.some((i) => i.menuId || i.kind === "event")) {
     await flush(ext);
-    return process_(db, ext, kfid, items, m.event?.welcome_code);
+    return serial(ext, (o) => process_(db, ext, kfid, items, m.event?.welcome_code, o));
   }
   const buf = buffers.get(ext);
   if (buf) { clearTimeout(buf.timer); buf.items.push(...items); }
@@ -184,16 +206,36 @@ async function flush(ext: string) {
   if (!buf) return;
   buffers.delete(ext);
   clearTimeout(buf.timer);
-  await process_(getDb(), ext, buf.openKfId, buf.items);
+  await serial(ext, (o) => process_(getDb(), ext, buf.openKfId, buf.items, undefined, o));
 }
 
-async function process_(db: DB, ext: string, openKfId: string, items: IncomingItem[], welcomeCode?: string) {
+// ── one batch at a time per user ──
+// WeChat allows only ~5 messages after the user's last message. Items sent in a burst (3 files) can still arrive as
+// several batches: they run one after the other (each sees the previous one's data), only the first says "Thinking...",
+// and a batch that has a newer one waiting may skip its reply (the spec check answers with the whole state at the end).
+type SerialOpts = { quiet: boolean; later: () => boolean };
+const chains: Map<string, { tail: Promise<void>; waiting: number; running: boolean }> =
+  ((globalThis as unknown as { __wecomChains?: Map<string, { tail: Promise<void>; waiting: number; running: boolean }> }).__wecomChains ??= new Map());
+function serial(ext: string, fn: (o: SerialOpts) => Promise<void>): Promise<void> {
+  const c = chains.get(ext) ?? { tail: Promise.resolve(), waiting: 0, running: false };
+  chains.set(ext, c);
+  const quiet = !c.running && c.waiting === 0; // nothing in flight: this batch may say "Thinking..."
+  c.waiting++;
+  const run = async () => {
+    c.waiting--; c.running = true;
+    try { await fn({ quiet, later: () => c.waiting > 0 || buffers.has(ext) }); } finally { c.running = false; }
+  };
+  c.tail = c.tail.then(run, run);
+  return c.tail;
+}
+
+async function process_(db: DB, ext: string, openKfId: string, items: IncomingItem[], welcomeCode?: string, o: SerialOpts = { quiet: true, later: () => false }) {
   const isEvent = items.every((i) => i.kind === "event");
   try {
     // progressive replies: "Thinking..." at once, then the fast translation, then the full answer (each counts toward the send budget)
     // WECOM_PROGRESS=0: one reply at the end, as before
-    const progress = isEvent || process.env.WECOM_PROGRESS === "0" ? undefined : { ack: true, send: (r: OutgoingReply) => send(db, ext, openKfId, [r]) };
-    const replies = await handleIncoming({ userId: userFor(db, ext), channel: "wecom", items, progress }, db);
+    const progress = isEvent || process.env.WECOM_PROGRESS === "0" ? undefined : { ack: o.quiet, send: (r: OutgoingReply) => send(db, ext, openKfId, [r]) };
+    const replies = await handleIncoming({ userId: userFor(db, ext), channel: "wecom", items, progress, superseded: o.later }, db);
     if (isEvent) {
       if (!welcomeCode || !replies.length) return;
       const first = replies.flatMap(toWecomPayloads)[0];
@@ -219,6 +261,7 @@ function menuLabel(label: string): string {
 }
 
 export function toWecomPayloads(reply: OutgoingReply): Record<string, unknown>[] {
+  if (reply.kind === "file" && reply.file) return [{ msgtype: "file", local_file: { path: reply.file.path, name: reply.file.name } }];
   if (reply.kind === "menu" && reply.buttons?.length) {
     // WeChat customer service has no styled buttons: msgmenu items are its only tappable choices (blue lines)
     const list = reply.buttons.map((b) => ({ type: "click", click: { id: b.id, content: menuLabel(b.label) } }));
@@ -252,7 +295,23 @@ async function send(db: DB, ext: string, openKfId: string, replies: OutgoingRepl
       state.set(db, `held:${ext}`, JSON.stringify([...held, payload]));
       continue;
     }
-    const r = await post<{ msgid?: string }>("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...payload }, db);
+    let ready: Record<string, unknown>;
+    try { ready = await materialize(db, payload); } catch (e) {
+      // the sheet couldn't be uploaded: say where to get it instead of failing the whole reply
+      console.error("[wecom] file upload failed:", e);
+      const local = payload.local_file as { name: string } | undefined;
+      ready = { msgtype: "text", text: { content: `📊 ${local?.name ?? "File"} is ready in the web app (Spec checks). Sending it on WeChat failed.` } };
+    }
+    let r: { msgid?: string };
+    try { r = await post<{ msgid?: string }>("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...ready }, db); } catch (e) {
+      if (!(e instanceof WecomError) || (e.errcode !== 95001 && e.errcode !== 95018)) throw e;
+      // WeChat's real limit was reached before ours: keep this and the rest for the user's next message
+      console.error(`[wecom] send limit (${e.errcode}): holding the rest`);
+      state.set(db, `budget:${ext}`, String(SEND_BUDGET));
+      const held = JSON.parse(state.get(db, `held:${ext}`) ?? "[]");
+      state.set(db, `held:${ext}`, JSON.stringify([...held, payload]));
+      continue;
+    }
     console.log(`[wecom] sent ${String(payload.msgtype)} msgid=${r.msgid ?? "?"} (${Buffer.byteLength(JSON.stringify(payload))} B)`);
     state.set(db, `budget:${ext}`, String(used + 1));
     state.set(db, `last_send:${ext}`, nowIso());
@@ -264,7 +323,7 @@ async function flushHeld(db: DB, ext: string, openKfId: string) {
   if (!held.length) return;
   state.set(db, `held:${ext}`, "[]");
   await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, msgtype: "text", text: { content: `📬 I have ${held.length} update${held.length > 1 ? "s" : ""} for you:` } }, db);
-  for (const p of held) await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...p }, db);
+  for (const p of held) await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...(await materialize(db, p).catch(() => ({ msgtype: "text", text: { content: "📊 A file is ready in the web app." } }))) }, db);
 }
 
 /** WeChat can only write to a user for 48 h after their last message (and ~5 messages). */

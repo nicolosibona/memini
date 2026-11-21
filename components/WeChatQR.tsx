@@ -43,7 +43,7 @@ export function WeChatQR({ enabled, linked }: { enabled: boolean; linked: boolea
 
   if (!enabled) {
     return (
-      <div className="aspect-square w-full max-w-[300px] mx-auto rounded-3xl border border-dashed border-line grid place-items-center text-center p-8">
+      <div className="aspect-square w-full max-w-[300px] mx-auto rounded-[28px] border border-dashed border-line bg-ivory grid place-items-center text-center p-8">
         <div>
           <Icon name="qr" className="size-8 text-faint mx-auto" />
           <p className="text-[14px] text-muted mt-3">The QR code appears once the WeChat keys are set on the server.</p>
@@ -55,12 +55,12 @@ export function WeChatQR({ enabled, linked }: { enabled: boolean; linked: boolea
   return (
     <div className="flex flex-col items-center">
       <div className="relative">
-        <div className={`rounded-3xl bg-white p-5 border border-line transition-opacity ${expired || busy ? "opacity-30" : ""}`}>
-          {link ? <QRCodeSVG value={link.url} size={240} level="M" marginSize={0} fgColor="#1a1917" /> : <div className="size-[240px] rounded-xl bg-line-2 animate-pulse" />}
+        <div className={`rounded-[28px] bg-white p-5 border border-line shadow-bento transition-opacity ${expired || busy ? "opacity-30" : ""}`}>
+          {link ? <QRCodeSVG value={link.url} size={240} level="M" marginSize={0} fgColor="#161513" /> : <div className="size-[240px] max-w-full rounded-2xl bg-line-2 animate-pulse" />}
         </div>
         {link && !expired && !busy && (
           <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 grid place-items-center size-12 rounded-xl bg-white">
-            <span className="grid place-items-center size-10 rounded-[9px] bg-wechat text-white"><Icon name="wechat" className="size-6" /></span>
+            <span className="grid place-items-center size-10 rounded-[10px] bg-wechat-dark text-white"><Icon name="wechat" className="size-6" /></span>
           </span>
         )}
         {expired && (
@@ -75,26 +75,26 @@ export function WeChatQR({ enabled, linked }: { enabled: boolean; linked: boolea
       ) : link && !expired ? (
         <div className="mt-5 text-center">
           <div className="text-[13px] text-muted">Or send this code in the chat</div>
-          <div className="font-mono text-[28px] tracking-[0.2em] tabular mt-1">{link.code}</div>
-          <div className="text-[12.5px] text-faint mt-1 tabular">Expires in {mmss}</div>
+          <div className="mono text-[28px] tracking-[0.2em] mt-1 text-ink">{link.code}</div>
+          <div className="text-[12.5px] text-faint mt-1 mono">Expires in {mmss}</div>
         </div>
       ) : null}
 
-      <div className="flex gap-2 mt-5">
+      <div className="flex flex-wrap justify-center gap-2 mt-5">
         <button onClick={() => void make()} disabled={busy} className={btnCls("secondary", "sm")}><Icon name="refresh" className="size-3.5" />Refresh</button>
         <button onClick={() => setBig(true)} disabled={!link || expired} className={btnCls("secondary", "sm")}><Icon name="expand" className="size-3.5" />Full screen</button>
       </div>
       {linked && <p className="text-[13px] text-muted mt-4 text-center max-w-[300px]">Your WeChat is already connected. Scanning again links another WeChat account in its place.</p>}
 
       {big && link && (
-        <div className="fixed inset-0 z-50 bg-paper grid place-items-center p-6 rise" onClick={() => setBig(false)} role="dialog" aria-label="WeChat QR code">
+        <div className="fixed inset-0 z-[80] bg-paper grid place-items-center p-6 overflow-y-auto rise" onClick={() => setBig(false)} role="dialog" aria-label="WeChat QR code">
           <div className="text-center">
-            <div className="display text-[44px] leading-tight">Scan to talk to Memini</div>
+            <div className="display text-[36px] sm:text-[44px] leading-tight">Scan to talk to Memini</div>
             <p className="text-[16px] text-muted mt-2">Open WeChat → Scan. Then forward anything you want remembered.</p>
-            <div className="inline-block rounded-[32px] bg-white p-8 border border-line mt-8">
-              <QRCodeSVG value={link.url} size={360} level="M" marginSize={0} fgColor="#1a1917" />
+            <div className="inline-block max-w-full rounded-[32px] bg-white p-6 sm:p-8 border border-line shadow-bento mt-8">
+              <QRCodeSVG value={link.url} size={360} level="M" marginSize={0} fgColor="#161513" className="max-w-full h-auto" />
             </div>
-            <div className="font-mono text-[32px] tracking-[0.2em] mt-6 tabular">{link.code}</div>
+            <div className="mono text-[32px] tracking-[0.2em] mt-6 text-ink">{link.code}</div>
             <button onClick={() => setBig(false)} className={`${btnCls("secondary")} mt-6`}><Icon name="x" className="size-4" />Close</button>
           </div>
         </div>

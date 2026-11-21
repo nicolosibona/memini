@@ -16,6 +16,12 @@ export const PROFILES = {
     matterKinds: ["purchase", "sale", "company", "residence_permit", "tax", "lease", "banking", "hr", "logistics", "legal", "general"],
     entityKinds: ["supplier", "customer", "government", "service_provider", "landlord", "bank", "logistics", "employee", "self_company", "self_person", "other"],
   },
+  electronics: {
+    label: "Electronic components",
+    description: "Engineer or buyer of electronic parts: forward your spec and the supplier's datasheets and chats — get a verified translation and a bilingual verification sheet for the supplier.",
+    matterKinds: ["purchase", "general"],
+    entityKinds: ["supplier", "other"],
+  },
 } as const;
 export type ProfileKey = keyof typeof PROFILES;
 

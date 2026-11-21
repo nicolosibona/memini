@@ -24,6 +24,7 @@ import { createConfirmLink, missingDocs, termChoices } from "./confirm";
 import { calendarPageUrl } from "./calendar";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
 import { isChinese, nameSimilarity } from "./normalize";
+import { handleSpecContent, isSheetRequest, sheetFor, specCommand, specMenu, SPEC_WELCOME } from "./spec/flow";
 import type { DocumentExtraction, TextExtraction } from "./schemas";
 
 export type Channel = "wecom" | "web_upload" | "web_chat" | "sim" | "supplier_link" | "email";
@@ -88,7 +89,9 @@ const profileKey = (db: DB, ws: string) => (db.prepare(`SELECT profile FROM work
 
 /** `entityId` / `matterId`: the sender is already known for certain (a supplier answering through their own link),
  *  so "Who is this from?" is skipped. The content is still extracted and audited like any other forward. */
-type IncomingInput = { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress; entityId?: string; matterId?: string };
+/** `superseded`: a newer batch from the same user is already waiting (WeChat bursts) — a reply that only restates
+ *  state (the spec check) can be left to that batch. */
+type IncomingInput = { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress; entityId?: string; matterId?: string; superseded?: () => boolean };
 
 export async function handleIncoming(input: IncomingInput, db: DB = getDb()): Promise<OutgoingReply[]> {
   let replies: OutgoingReply[];
@@ -126,6 +129,7 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
   if (menu) {
     logRaw(db, ws, input, [menu], "menu_reply");
     if (/^(ent|mat):/.test(menu.menuId!) && menu.menuId !== "ent:skip") await ack(THINKING);
+    if (menu.menuId!.startsWith("spec:")) { if (menu.menuId !== "spec:new") await ack(THINKING); return specMenu(db, ws, input.userId, menu.menuId!.slice(5)); }
     return handleMenu(db, ws, input.userId, menu.menuId!);
   }
   const ev = items.find((i) => i.kind === "event");
@@ -142,10 +146,30 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
     const e = createEntity(db, ws, { kind: st.newKind ?? "supplier", display_name: joined.slice(0, 80) });
     return resolvePendingWithEntity(db, ws, pending, e.id, `➕ Created ${entityLabel(e)}.`);
   }
-  if (textOnly && commandOf(joined)) { logRaw(db, ws, input, items, "command"); return handleCommand(db, ws, input.userId, commandOf(joined)!, joined); }
+  const electronics = profileKey(db, ws) === "electronics" && !input.entityId && input.channel !== "supplier_link";
+  if (textOnly && commandOf(joined)) {
+    logRaw(db, ws, input, items, "command");
+    if (electronics) { const r = await specCommand(db, ws, input.userId, commandOf(joined)!); if (r) return r; }
+    return handleCommand(db, ws, input.userId, commandOf(joined)!, joined);
+  }
 
   const msgs = await storeMessages(db, ws, input, items);
   const text = msgs.map((m) => m.text_original ?? "").join("\n");
+  if (electronics) {
+    // electronics spec check: everything forwarded goes into the open check; only a clear question goes to the assistant
+    if (textOnly && isSheetRequest(text)) { setStatus(db, msgs, "command", "skipped"); return sheetFor(db, input.userId); }
+    const it = textOnly ? await classifyIntent(text, msgs.map((m) => m.kind)) : { intent: "content" as const, confidence: 1 };
+    const technical = /\d\s*(?:k?v|m?a|k?w|mv|%|°c|℃|[µμu]f|mm|k?hz|小时|伏|安)/i.test(text); // values → it's content, whatever the phrasing
+    if (it.intent === "question" && it.confidence >= 0.8 && !technical) {
+      setStatus(db, msgs, "question", "skipped");
+      await ack(THINKING);
+      return [answerReply((await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text)];
+    }
+    setStatus(db, msgs, "content", "assigned");
+    if (msgs.some((m) => m.file_path)) await ack(THINKING); // documents take ~10 s; chat messages answer in a few
+    const replies = await handleSpecContent(db, ws, input.userId, msgs);
+    return input.superseded?.() ? [] : replies; // the batch waiting behind this one answers with the whole check
+  }
   // the user's own appointment or reminder, typed or dictated ("meeting with Seller 1 on Dec 25, put it in the calendar")
   if (!input.entityId && input.channel !== "email" && input.channel !== "supplier_link" && msgs.every((m) => m.kind === "text" || m.kind === "voice") && isCalendarRequest(text)) {
     setStatus(db, msgs, "command", "skipped");
@@ -782,6 +806,7 @@ function confirmLinkReplies(db: DB, userId: string, matterId: string): OutgoingR
 }
 
 function welcome(profile: string): OutgoingReply {
+  if (profile === "electronics") return { kind: "text", text: SPEC_WELCOME };
   const business = profileOf(profile) === profileOf("china_business");
   return {
     kind: "text",

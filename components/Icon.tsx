@@ -28,7 +28,6 @@ const PATHS: Record<string, string> = {
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
   plus: "M12 5v14M5 12h14",
   x: "M6 6l12 12M18 6 6 18",
-  sparkle: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z",
   search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4",
   dot: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
   clip: "M20.5 11.5 12.6 19.4a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5",
@@ -41,6 +40,13 @@ const PATHS: Record<string, string> = {
   forward: "M14 5l7 7-7 7M21 12H9a6 6 0 0 0-6 6v1",
   expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   menu: "M4 7h16M4 12h16M4 17h16",
+  chevron: "M9 6l6 6-6 6",
+  down: "M6 9l6 6 6-6",
+  play: "M8 5.5v13l10-6.5z",
+  external: "M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10",
+  command: "M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3",
+  layers: "M12 3 3 8l9 5 9-5zM3 13l9 5 9-5",
+  minus: "M5 12h14",
 };
 
 export function Icon({ name, className = "size-4" }: { name: keyof typeof PATHS | string; className?: string }) {

@@ -1,6 +1,9 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { btnCls } from "./ui";
+
+const FIELD_PILL = "rounded-full border border-line bg-card px-3.5 h-9 text-[13px] text-ink placeholder:text-faint focus-visible:border-ink/40";
 
 export function MatterActions({ id, status, subject, kind }: { id: string; status: string; subject: string | null; kind: string }) {
   const router = useRouter();
@@ -14,18 +17,18 @@ export function MatterActions({ id, status, subject, kind }: { id: string; statu
     router.refresh();
   });
   return (
-    <div className="flex items-center gap-2 text-[12.5px]">
+    <div className="flex flex-wrap items-center gap-2">
       {editing ? (
-        <form onSubmit={(e) => { e.preventDefault(); save({ subject: value }); }} className="flex gap-1">
-          <input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={kind === "purchase" ? "Product, e.g. 65W USB-C charger" : "What it's about"} className="rounded-full border border-line px-3 h-8 w-56" />
-          <button disabled={pending} className="press rounded-full bg-ink text-white px-3 h-8">Save</button>
+        <form onSubmit={(e) => { e.preventDefault(); save({ subject: value }); }} className="flex gap-1.5">
+          <input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder={kind === "purchase" ? "Product, e.g. 65W USB-C charger" : "What it's about"} className={`${FIELD_PILL} w-56 max-w-full`} />
+          <button disabled={pending} className={btnCls("primary", "sm")}>Save</button>
         </form>
       ) : (
-        <button onClick={() => setEditing(true)} title={kind === "purchase" ? "Purchases with the same product are compared together" : undefined} className="press rounded-full border border-line px-3 h-8 hover:bg-hover">
+        <button onClick={() => setEditing(true)} title={kind === "purchase" ? "Purchases with the same product are compared together" : undefined} className={btnCls("secondary", "sm")}>
           {kind === "purchase" ? "Set product" : "Edit subject"}
         </button>
       )}
-      <select disabled={pending} value={status} onChange={(e) => save({ status: e.target.value })} className="rounded-full border border-line bg-card px-2.5 h-8">
+      <select disabled={pending} value={status} onChange={(e) => save({ status: e.target.value })} aria-label="Status" className={FIELD_PILL}>
         <option value="open">Open</option>
         <option value="waiting">Waiting</option>
         <option value="done">Done</option>

@@ -13,7 +13,7 @@ import { runAudit } from "@/lib/core/audit";
 import { indexText } from "@/lib/core/memory";
 import type { FactKey, ProfileKey } from "@/lib/core/domain";
 
-const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls", "outreach_recipients", "outreach_campaigns", "share_links", "confirmations"];
+const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls", "outreach_recipients", "outreach_campaigns", "share_links", "confirmations", "spec_items", "spec_checks"];
 const ws = DEMO_WORKSPACE;
 const daysAgo = (n: number, hour = 9) => `${addDays(today(), -n)}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 
@@ -26,7 +26,7 @@ export async function resetDemo(db: DB, opts: { empty?: boolean; profile?: Profi
     db.prepare(`DELETE FROM wecom_state WHERE k = 'allow_reset'`).run();
   })();
   db.prepare(`UPDATE workspaces SET profile = ? WHERE id = ?`).run(profile, ws);
-  if (opts.empty) return null;
+  if (opts.empty || profile === "electronics") return null; // electronics starts clean: the demo is forwarding to the bot
 
   // a forwarded chat that was filed earlier: raw message + facts with quotes + nickname learning
   const chat = (entityId: string, matterId: string, at: string, author: string, text: string, translation: string, facts: [FactKey, number | string, string, string?][]) => {

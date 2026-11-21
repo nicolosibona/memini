@@ -14,6 +14,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.9.0",
     "better-sqlite3": "^13.2.0",
+    "exceljs": "^4.4.0",
     "imapflow": "2.11.0",
     "next": "15.5.29",
     "openai": "^7.57.0",
