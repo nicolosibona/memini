@@ -26,6 +26,6 @@ export function pulse(db: DB, ws: string): { v: string; latest: PulseEvent | nul
      WHERE workspace_id = ? AND direction = 'in' AND kind NOT IN ('menu_click', 'event') ORDER BY received_at DESC, rowid DESC LIMIT 1`,
   ).get(ws) as { id: string; channel: string; kind: string; text_original: string | null; file_path: string | null; at: string } | undefined;
   if (!last) return { v, latest: null };
-  const text = last.text_original ?? (last.file_path ? originalFileName(last.file_path) : "");
+  const text = last.text_original ?? (last.file_path && last.kind === "file" ? originalFileName(last.file_path) : "");
   return { v, latest: { id: last.id, channel: last.channel, kind: last.kind, text: text.slice(0, 90), at: last.at } };
 }

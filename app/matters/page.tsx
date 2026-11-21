@@ -45,7 +45,7 @@ export default async function MattersPage({ searchParams }: { searchParams: Prom
               const next = listTasks(db, CURRENT_WS, { matterId: m.id, status: "open" })[0];
               const alerts = openAlerts(db, { matterId: m.id });
               return (
-                <Link key={m.id} href={`/matters/${m.id}`} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_160px_150px_110px] items-center gap-3 px-5 py-3.5 hover:bg-hover transition-colors">
+                <Link key={m.id} href={`/matters/${m.id}`} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_160px_150px_110px] items-center gap-3 px-5 py-3.5 hover:bg-hover transition-colors">
                   <div className="min-w-0">
                     <div className="text-[14px] font-medium truncate">{m.title}</div>
                     <div className="text-[12.5px] text-muted truncate">{e ? entityLabel(e) : "—"}{alerts.length ? ` · ${alerts.length} alert${alerts.length > 1 ? "s" : ""}` : ""}</div>

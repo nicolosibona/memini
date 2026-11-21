@@ -62,7 +62,7 @@ export default async function WeChatPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr] items-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
         <Card className="enter-2 p-8">
           <WeChatQR enabled={configured} linked={linked} />
         </Card>
@@ -103,7 +103,7 @@ export default async function WeChatPage() {
             <div className="divide-y divide-line">
               {recent.map((m) => {
                 const k = KIND[m.kind] ?? KIND.text;
-                const text = m.text_original ?? (m.file_path ? originalFileName(m.file_path) : "");
+                const text = m.text_original ?? (m.file_path && m.kind === "file" ? originalFileName(m.file_path) : ""); // photos and voice notes arrive with a media id as name
                 return (
                   <div key={m.id} className={`flex items-center gap-3 px-5 py-3 ${Date.now() - +new Date(m.received_at) < 120000 ? "flash" : ""}`}>
                     <span className="grid place-items-center size-8 rounded-full bg-wechat-soft text-wechat-dark shrink-0"><Icon name={k.icon} className="size-4" /></span>

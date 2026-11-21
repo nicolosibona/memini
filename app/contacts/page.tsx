@@ -31,7 +31,7 @@ export default async function ContactsPage() {
               const matters = listMatters(db, CURRENT_WS, { entityId: e.id, status: ["open", "waiting"] });
               const alerts = openAlerts(db, { entityId: e.id });
               return (
-                <Link key={e.id} href={`/contacts/${e.id}`} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_200px_120px_110px] items-center gap-3 px-5 py-3.5 hover:bg-hover transition-colors">
+                <Link key={e.id} href={`/contacts/${e.id}`} className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_200px_120px_110px] items-center gap-3 px-5 py-3.5 hover:bg-hover transition-colors">
                   <div className="min-w-0">
                     <div className="text-[14px] font-medium truncate">{entityLabel(e)}</div>
                     <div className="text-[12.5px] text-muted truncate">{[e.legal_name_zh, e.credit_code].filter(Boolean).join(" · ") || ENTITY_KINDS[e.kind].label}</div>

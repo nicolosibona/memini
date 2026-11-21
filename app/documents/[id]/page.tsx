@@ -34,7 +34,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           {d.expires_at && <Pill>Expires {fmtDate(d.expires_at, { year: true })}</Pill>}
         </div>
       </header>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <Card className="overflow-hidden min-h-[480px]">
           {!d.file_path ? <Empty icon="file">No original file stored for this document.</Empty>
             : mime.startsWith("image/") ? image
@@ -57,7 +57,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             <Section title="Parties">
               <Card className="divide-y divide-line">
                 {x.parties.map((p, i) => (
-                  <div key={i} className="grid grid-cols-[110px_1fr] gap-3 px-5 py-2.5 text-[14px]">
+                  <div key={i} className="grid grid-cols-[110px_minmax(0,1fr)] gap-3 px-5 py-2.5 text-[14px]">
                     <span className="text-muted capitalize">{p.role.replace("_", " ")}</span>
                     <span>{p.name}{p.name_alt ? <span className="text-muted"> · {p.name_alt}</span> : null}{p.credit_code ? <span className="block text-[12.5px] text-muted font-mono">{p.credit_code}</span> : null}</span>
                   </div>

@@ -41,7 +41,7 @@ export function MatterDetail({ db, id, compact = false }: { db: DB; id: string; 
         )}
       </header>
 
-      <div className={`grid grid-cols-1 gap-x-8 ${compact ? "" : "lg:grid-cols-[1fr_320px]"}`}>
+      <div className={`grid grid-cols-1 gap-x-8 ${compact ? "" : "lg:grid-cols-[minmax(0,1fr)_320px]"}`}>
         <div className="min-w-0">
           <Section title="Checks" right={`${v.alerts.length} open`}>
             <Card><AlertList alerts={alertViews(db, v.alerts)} /></Card>
