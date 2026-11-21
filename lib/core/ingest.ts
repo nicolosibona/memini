@@ -19,6 +19,7 @@ import { analysisButtons, canReplyTo, chineseDraftIn, COPY_LABEL, consistentTerm
 import { indexText, reindexScope, entityProfile } from "./memory";
 import { ask } from "./assistant";
 import { calendarSubscribed, userToken } from "./tokens";
+import { isCalendarRequest, readReminder, saveReminder } from "./reminders";
 import { createConfirmLink, missingDocs, termChoices } from "./confirm";
 import { calendarPageUrl } from "./calendar";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
@@ -145,6 +146,11 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
 
   const msgs = await storeMessages(db, ws, input, items);
   const text = msgs.map((m) => m.text_original ?? "").join("\n");
+  // the user's own appointment or reminder, typed or dictated ("meeting with Seller 1 on Dec 25, put it in the calendar")
+  if (!input.entityId && input.channel !== "email" && input.channel !== "supplier_link" && msgs.every((m) => m.kind === "text" || m.kind === "voice") && isCalendarRequest(text)) {
+    setStatus(db, msgs, "command", "skipped");
+    return reminderReplies(db, ws, input.userId, text, msgs);
+  }
   // a counterparty answering through their own link, or a forwarded email: always content, never a question for the assistant
   const intent = input.entityId || input.channel === "email" ? { intent: "content" as const, confidence: 1, via: "rule" as const } : await classifyIntent(text, msgs.map((m) => m.kind));
   if (intent.intent === "question" && intent.confidence >= 0.7) {
@@ -628,6 +634,13 @@ async function handleMenu(db: DB, ws: string, userId: string, menuId: string): P
 
   if (prefix === "cal") return [calendarReply(db, userId)];
 
+  if (prefix === "tdel") {
+    const t = db.prepare(`SELECT what FROM tasks WHERE id = ? AND workspace_id = ? AND status = 'open'`).get(Number(arg), ws) as { what: string } | undefined;
+    if (!t) return [{ kind: "text", text: "Already removed." }];
+    db.prepare(`UPDATE tasks SET status = 'cancelled' WHERE id = ?`).run(Number(arg));
+    return [{ kind: "text", text: `↩️ Removed from your calendar: ${t.what}` }];
+  }
+
   if (prefix === "zh") {
     // the clean Chinese bubble: nothing but the text to forward
     const d = db.prepare(`SELECT text_original FROM messages WHERE id = ? AND workspace_id = ? AND direction = 'out'`).get(arg, ws) as { text_original: string } | undefined;
@@ -716,6 +729,31 @@ async function handleCommand(db: DB, ws: string, userId: string, cmd: string, ra
   return [{ kind: "text", text: "Commands: /today · /deadlines · /calendar · /link · /alerts · /contacts · /suppliers · /seller1 · agreed" }];
 }
 
+/** "Put it in my calendar": read the date (rules, then the model), save it as a task, say exactly what was saved.
+ *  A follow-up without a date ("can we put the meeting on my calendar?") takes it from the message just before. */
+async function reminderReplies(db: DB, ws: string, userId: string, text: string, msgs: MsgRow[]): Promise<OutgoingReply[]> {
+  let source = text;
+  let draft = await readReminder(text);
+  if (!draft) {
+    const prev = db.prepare(`SELECT id, text_original FROM messages WHERE user_id = ? AND direction = 'in' AND kind IN ('text','voice') AND id NOT IN (${msgs.map(() => "?").join(",")}) AND received_at >= ? AND text_original IS NOT NULL ORDER BY received_at DESC LIMIT 1`)
+      .get(userId, ...msgs.map((m) => m.id), new Date(Date.now() - 20 * 60_000).toISOString()) as { id: string; text_original: string } | undefined;
+    const done = prev && (db.prepare(`SELECT what, due_at FROM tasks WHERE source_message_id = ? AND status = 'open'`).get(prev.id) as { what: string; due_at: string } | undefined);
+    if (done) return [{ kind: "text", text: `📅 Already added: ${done.what} (${fmtDay(done.due_at)}).${calendarSubscribed(db, userId) ? "" : " Send /calendar to see it in your iPhone calendar."}` }];
+    if (prev) { draft = await readReminder(prev.text_original); source = prev.text_original; }
+  }
+  if (!draft) return [{ kind: "text", text: "📅 Which day? Write it like: \"Meeting with Seller 1 on Dec 25 at 3pm\" or \"Remind me to pay the deposit on Friday\"." }];
+  const saved = saveReminder(db, ws, draft, source, msgs[0]?.id ?? null);
+  const what = (db.prepare(`SELECT what FROM tasks WHERE id = ?`).get(saved.taskId) as { what: string }).what;
+  const day = new Date(`${draft.date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const subscribed = calendarSubscribed(db, userId);
+  return [{
+    kind: "menu",
+    text: `📅 Added: ${what}\n🗓 ${day}${draft.time ? ` · ${draft.time}` : ""}\n${subscribed ? "It shows up in your iPhone calendar within the hour, with reminders." : "Saved in Deadlines. To see it in your iPhone calendar too, tap below once."}`,
+    prompt: "Wrong date? Undo and send it again.",
+    buttons: [...(subscribed ? [] : [{ id: "cal:add", label: "📅 Add to iPhone calendar" }]), { id: `tdel:${saved.taskId}`, label: "↩️ Undo" }],
+  }];
+}
+
 /** Subscribe once and every date Memini finds lands in the iPhone Calendar by itself. WeChat's browser can't add
  *  calendars, so the page asks to switch to Safari — once, not for every date. */
 function calendarReply(db: DB, userId: string): OutgoingReply {
@@ -748,7 +786,7 @@ function welcome(profile: string): OutgoingReply {
   return {
     kind: "text",
     text: business
-      ? "👋 I'm Memini, your assistant for doing business in China.\n\nForward me anything — supplier messages, contracts, tax notices, your permit, a landlord's chat. I'll translate it, file it under the right matter, check it against what you already have, and track every deadline.\n\nTry: \"What's due this month?\" or \"Any problems with my lease?\""
+      ? "👋 I'm Memini, your assistant for doing business in China.\n\nForward me anything — supplier messages, contracts, tax notices, your permit, a landlord's chat. I'll translate it, file it under the right matter, check it against what you already have, and track every deadline.\n\nTry: \"What's due this month?\", \"Any problems with my lease?\" or \"Meeting with Seller 1 on Dec 25 at 3pm, put it in my calendar\""
       : "👋 I'm Memini, your China sourcing analyst.\n\nForward me a supplier's message, PDF or business license — I'll translate it, check it against everything they said before, and draft a Chinese reply.\n\nTry: \"What did Seller 2 quote me?\"",
   };
 }
