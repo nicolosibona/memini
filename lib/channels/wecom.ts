@@ -199,10 +199,14 @@ async function process_(db: DB, ext: string, openKfId: string, items: IncomingIt
 // ── sending (§6.2 budget, §5.12 msgmenu) ──
 export function toWecomPayloads(reply: OutgoingReply): Record<string, unknown>[] {
   if (reply.kind === "menu" && reply.buttons?.length) {
+    // WeChat customer service has no styled buttons: msgmenu items are its only tappable choices (blue lines)
     const list = reply.buttons.map((b) => ({ type: "click", click: { id: b.id, content: b.label.slice(0, 64) } }));
-    if (Buffer.byteLength(reply.text) <= MENU_HEAD_MAX) return [{ msgtype: "msgmenu", msgmenu: { head_content: reply.text, list, tail_content: "" } }];
-    // head_content too short for the full reply → full text first, then a small menu with just the buttons
-    return [...textChunks(reply.text).map((t) => ({ msgtype: "text", text: { content: t } })), { msgtype: "msgmenu", msgmenu: { head_content: "👇", list, tail_content: "" } }];
+    const tail = "Tap one to choose";
+    if (Buffer.byteLength(reply.text) <= MENU_HEAD_MAX) return [{ msgtype: "msgmenu", msgmenu: { head_content: reply.text, list, tail_content: tail } }];
+    // long reply → the text first, then the question alone with its choices right under it
+    const prompt = reply.prompt && Buffer.byteLength(reply.prompt) <= MENU_HEAD_MAX ? reply.prompt : "Choose one:";
+    const body = reply.prompt && reply.text.endsWith(reply.prompt) ? reply.text.slice(0, -reply.prompt.length).trimEnd() : reply.text;
+    return [...textChunks(body).map((t) => ({ msgtype: "text", text: { content: t } })), { msgtype: "msgmenu", msgmenu: { head_content: prompt, list, tail_content: tail } }];
   }
   return textChunks(reply.text).map((t) => ({ msgtype: "text", text: { content: t } }));
 }

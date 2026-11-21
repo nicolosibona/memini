@@ -10,7 +10,9 @@ import type { AlertRow } from "./audit";
 import { shareUrl } from "./links";
 
 export type Button = { id: string; label: string };
-export type OutgoingReply = { kind: "text" | "menu"; text: string; buttons?: Button[] };
+/** `prompt`: the short question right above the choices. On WeChat a long reply goes out as text first and the menu
+ *  follows with just this question, so the choices sit under it instead of under a wall of text. */
+export type OutgoingReply = { kind: "text" | "menu"; text: string; buttons?: Button[]; prompt?: string };
 
 const SEV: Record<string, string> = { red: "🔴", amber: "🟡", info: "ℹ️" };
 
@@ -137,8 +139,8 @@ ${p.missingLicense ? "No business license received yet.\n" : ""}What just arrive
 }
 
 export const analysisButtons = (assignmentId: string): Button[] => [
-  { id: `chg:${assignmentId}`, label: "Change where it's filed" },
-  { id: `agr:${assignmentId}`, label: "Mark terms as agreed" },
+  { id: `chg:${assignmentId}`, label: "✏️ Change where it's filed" },
+  { id: `agr:${assignmentId}`, label: "✅ Mark terms as agreed" },
 ];
 
 export const detailsLine = (kind: "e" | "m", id: string) => `🔗 Details: ${shareUrl(kind, id)}`;

@@ -279,15 +279,17 @@ function askWho(db: DB, ws: string, userId: string, msgs: MsgRow[], clues: Clue[
   const shown = px();
   const translations = msgs.flatMap((m) => { const x = extractedOf(m); return x?.type === "text" ? [formatTranslation(x.data, { translation: !shown?.shownTr.has(m.id) })] : []; }).filter(Boolean);
   const summaries = msgs.flatMap((m) => { const x = extractedOf(m); return x?.type === "document" && !shown?.shownDoc.has(m.id) ? [`📄 ${x.data.title}${x.data.summary ? ` — ${x.data.summary}` : ""}`] : []; });
+  // only an open "Who is this from?" can be joined; any other open question (intent, matter, name) is left as it is
   let existing = openPending(db, userId);
-  if (existing?.awaiting === "entity_choice" && Date.now() - +new Date(existing.menu_sent_at) > PENDING_STALE_MS) {
+  if (existing && existing.awaiting !== "entity_choice") existing = undefined;
+  if (existing && Date.now() - +new Date(existing.menu_sent_at) > PENDING_STALE_MS) {
     db.prepare(`UPDATE pending_groups SET status = 'expired' WHERE id = ?`).run(existing.id); // its messages stay pending → To file
     existing = undefined;
   }
   let groupMsgIds = msgs.map((m) => m.id);
   let st: PendingState;
   let joinedCount = 0;
-  if (existing?.awaiting === "entity_choice") {
+  if (existing) {
     groupMsgIds = [...JSON.parse(existing.message_ids), ...groupMsgIds];
     const prev = JSON.parse(existing.clues_json) as PendingState;
     st = { ...prev, clues: [...prev.clues, ...clues], conflict: prev.conflict ?? o.conflict, newName: prev.newName ?? o.newName, newKind: prev.newKind ?? o.newKind };
@@ -307,18 +309,19 @@ function askWho(db: DB, ws: string, userId: string, msgs: MsgRow[], clues: Clue[
   const lines = [...summaries, ...translations];
   const what = joinedCount ? `${joinedCount} items in a row` : describeItems(msgs);
   if (joinedCount) lines.push(`📥 Together with what you sent just before, ${joinedCount} items are waiting. They'll all be filed under the one you pick.`);
-  if (st.conflict) lines.push(`⚠️ ${st.conflict}\nI saved nothing yet. Who is this from?`);
-  else if (st.newName) lines.push(`I received ${what} from ${st.newName}, who isn't in your contacts yet.\nWho is this from?`);
-  else if (guess) lines.push(`I received ${what}, but I can't find the company name.\nWho is this from? I think it's ${guess.label} — ${r.guessReason}.`);
-  else lines.push(`I received ${what}, but I can't find the company name.\nWho is this from?`);
+  const prompt = st.conflict ? `⚠️ ${st.conflict}\nI saved nothing yet. Who is this from?`
+    : st.newName ? `I received ${what} from ${st.newName}, who isn't in your contacts yet.\nWho is this from?`
+    : guess ? `I received ${what}, but I can't find the company name.\nWho is this from? I think it's ${guess.label} — ${r.guessReason}.`
+    : `I received ${what}, but I can't find the company name.\nWho is this from?`;
+  lines.push(prompt);
   const ordered = guess ? [guess, ...r.candidates.filter((c) => c.id !== guess.id)] : r.candidates;
   const kindLabel = ENTITY_KINDS[st.newKind ?? "supplier"].label.toLowerCase();
   return [{
-    kind: "menu", text: lines.join("\n\n"),
+    kind: "menu", text: lines.join("\n\n"), prompt,
     buttons: [
-      ...ordered.slice(0, st.newName ? 3 : 4).map((c) => ({ id: `ent:${c.id}`, label: entityLabel(c) })),
+      ...ordered.slice(0, st.newName ? 3 : 4).map((c) => ({ id: `ent:${c.id}`, label: `${ENTITY_KINDS[c.kind]?.icon ?? "👤"} ${entityLabel(c)}${guess && c.id === guess.id ? " (likely)" : ""}` })),
       { id: "ent:new", label: st.newName ? `➕ New ${kindLabel}: ${st.newName}` : "➕ Someone new" },
-      { id: "ent:skip", label: "❌ Don't save, translation only" },
+      { id: "ent:skip", label: "🚫 Don't save, just translate" },
     ],
   }];
 }
@@ -470,7 +473,7 @@ async function analysisReply(db: DB, ws: string, entityId: string, matterIds: st
   if (missingLicense) parts.push(`⚠️ ${e.label} hasn't sent a business license yet.`);
   if (canReplyTo(e.kind) && d.reply_zh) parts.push(`💬 Suggested reply (copy and send):\n${d.reply_zh}`);
   parts.push(detailsLine(matters.length === 1 ? "m" : "e", matters.length === 1 ? matters[0].id : entityId));
-  return { kind: "menu", text: parts.join("\n\n"), buttons: analysisButtons(asgId) };
+  return { kind: "menu", text: parts.join("\n\n"), prompt: "Anything to fix?", buttons: analysisButtons(asgId) };
 }
 
 async function resolvePendingWithEntity(db: DB, ws: string, pend: PendingRow, entityId: string, prefix?: string, matterId?: string): Promise<OutgoingReply[]> {
@@ -561,7 +564,7 @@ async function handleMenu(db: DB, ws: string, userId: string, menuId: string): P
     const others = listEntities(db, ws).filter((e) => e.id !== current);
     db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
       .run(newId("pg"), userId, asg.message_ids, JSON.stringify(others.map((e) => e.id)), JSON.stringify({ clues: JSON.parse(asg.clues_json).clues ?? [], moveFrom: { assignmentId: asg.id } } satisfies PendingState), "entity_choice", nowIso());
-    return [{ kind: "menu", text: `Who should these ${describeItems(msgs)} go to?`, buttons: [...others.slice(0, 4).map((e) => ({ id: `ent:${e.id}`, label: entityLabel(e) })), { id: "ent:new", label: "➕ Someone new" }, { id: "ent:skip", label: "❌ Don't save" }] }];
+    return [{ kind: "menu", text: `Who should these ${describeItems(msgs)} go to?`, buttons: [...others.slice(0, 4).map((e) => ({ id: `ent:${e.id}`, label: entityLabel(e) })), { id: "ent:new", label: "➕ Someone new" }, { id: "ent:skip", label: "🚫 Don't save" }] }];
   }
 
   if (prefix === "agr") return markAgreed(db, ws, arg);

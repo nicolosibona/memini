@@ -56,7 +56,7 @@ describe("sourcing demo script", async () => {
     const [r] = await send([{ kind: "text", menuId: `ent:${s1}` }]);
     expect(r.text).toContain("Filed under: Seller 1");
     expect(r.text).toContain("65W USB-C charger");
-    expect(r.buttons!.map((b) => b.label)).toEqual(["Change where it's filed", "Mark terms as agreed"]);
+    expect(r.buttons!.map((b) => b.label)).toEqual(["✏️ Change where it's filed", "✅ Mark terms as agreed"]);
     const price = currentTerms(db, { matterId: purchase1().id }).find((t) => t.key === "unit_price")!;
     expect(JSON.parse(price.current.value_json).amount).toBe(4.2);
     expect(listTasks(db, DEMO_WORKSPACE, { entityId: s1 }).map((t) => t.what)).toContain("Ship the sample");
@@ -102,6 +102,18 @@ describe("sourcing demo script", async () => {
     const item: Item = { kind: "text", text: "What did Seller 2 quote?", externalMsgId: "wx-1" };
     expect(await send([item])).toHaveLength(1);
     expect(await send([item])).toHaveLength(0);
+  });
+
+  it("an open question of another kind is not overwritten: the forward gets its own who-is-this menu, and tapping it works", async () => {
+    const [q] = await send([{ kind: "text", text: "Seller ABC" }]); // neither clearly content nor a question → intent menu
+    expect(q.buttons?.map((x) => x.id)).toEqual(["int:content", "int:question"]);
+    const [menu] = await send([{ kind: "text", text: "亲，样品下周一寄出，运费到付。" }]);
+    expect(menu.buttons!.map((x) => x.id)).toContain("ent:skip");
+    expect(menu.prompt).toContain("Who is this from?");
+    const [r] = await send([{ kind: "text", menuId: "ent:skip" }]);
+    expect(r.text).not.toContain("already been answered");
+    const [old] = await send([{ kind: "text", menuId: "int:question" }]);
+    expect(old.text).not.toContain("already been answered"); // the intent question is still answerable
   });
 
   it("an unanswered question from hours ago is closed: a new forward gets its own menu, the old items wait in To file", async () => {
