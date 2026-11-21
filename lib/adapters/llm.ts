@@ -22,6 +22,7 @@ const DEFAULT_MODEL: Record<LlmStep, string> = {
   asr: "scribe_v2",
 };
 export function modelFor(step: LlmStep): string {
+  if (step === "asr") return process.env.MODEL_ASR ?? DEFAULT_MODEL.asr; // speech-to-text is ElevenLabs, never ANTHROPIC_MODEL
   return process.env[`MODEL_${step.toUpperCase()}`] ?? (step === "intent" ? DEFAULT_MODEL.intent : process.env.ANTHROPIC_MODEL ?? DEFAULT_MODEL[step]);
 }
 type Effort = "low" | "medium" | "high";
