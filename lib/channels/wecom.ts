@@ -51,13 +51,19 @@ async function post<T>(path: string, body: unknown, db: DB = getDb()): Promise<T
   throw new Error("access_token refresh failed");
 }
 
+/** msg_send_fail.fail_type (WeCom kf docs) */
+const SEND_FAIL: Record<number, string> = {
+  0: "unknown", 1: "customer-service account deleted", 2: "app closed", 4: "session expired", 5: "session closed", 6: "over the 5-message limit",
+  8: "company not verified", 10: "user refused messages", 11: "no member logged in to the WeCom app", 12: "message type not allowed", 13: "account limit",
+};
+
 // ── pulling messages ──
 type KfMsg = {
   msgid: string; open_kfid?: string; external_userid?: string; send_time: number; origin: number; msgtype: string;
   text?: { content: string; menu_id?: string };
   image?: { media_id: string }; voice?: { media_id: string }; file?: { media_id: string };
   merged_msg?: { title: string; item: { send_time: number; msgtype: string; sender_name: string; msg_content: string }[] };
-  event?: { event_type: string; open_kfid?: string; external_userid?: string; scene?: string; scene_param?: string; welcome_code?: string };
+  event?: { event_type: string; open_kfid?: string; external_userid?: string; scene?: string; scene_param?: string; welcome_code?: string; fail_msgid?: string; fail_type?: number };
 };
 
 let syncing: Promise<void> | null = null;
@@ -129,7 +135,10 @@ async function toItems(db: DB, m: KfMsg): Promise<IncomingItem[] | null> {
         return text ? [{ kind: "merged", text, originalAuthor: it.sender_name, chatTitle: m.merged_msg!.title, externalMsgId: `${m.msgid}#${i}`, receivedAt: new Date(it.send_time * 1000).toISOString() }] : [];
       });
     }
-    case "event": return m.event?.event_type === "enter_session" ? [{ ...base, kind: "event", event: "enter_session" }] : [];
+    case "event":
+      // send_msg returning ok doesn't mean delivered: WeChat reports a failed delivery later as this event
+      if (m.event?.event_type === "msg_send_fail") console.error(`[wecom] delivery failed: msgid=${m.event.fail_msgid} fail_type=${m.event.fail_type} (${SEND_FAIL[m.event.fail_type ?? 0] ?? "unknown"})`);
+      return m.event?.event_type === "enter_session" ? [{ ...base, kind: "event", event: "enter_session" }] : [];
     default: return null; // unsupported type
   }
 }
@@ -197,11 +206,21 @@ async function process_(db: DB, ext: string, openKfId: string, items: IncomingIt
 }
 
 // ── sending (§6.2 budget, §5.12 msgmenu) ──
+/** click.content: 1-128 bytes. Drop variation selectors and cut on a whole character, never inside an emoji. */
+function menuLabel(label: string): string {
+  let out = "";
+  for (const ch of label.replace(/[\uFE0E\uFE0F]/g, "")) {
+    if (Buffer.byteLength(out + ch) > 120) break;
+    out += ch;
+  }
+  return out.trim() || "…";
+}
+
 export function toWecomPayloads(reply: OutgoingReply): Record<string, unknown>[] {
   if (reply.kind === "menu" && reply.buttons?.length) {
     // WeChat customer service has no styled buttons: msgmenu items are its only tappable choices (blue lines)
-    const list = reply.buttons.map((b) => ({ type: "click", click: { id: b.id, content: b.label.slice(0, 64) } }));
-    const tail = "Tap one to choose";
+    const list = reply.buttons.map((b) => ({ type: "click", click: { id: b.id, content: menuLabel(b.label) } }));
+    const tail = "";
     if (Buffer.byteLength(reply.text) <= MENU_HEAD_MAX) return [{ msgtype: "msgmenu", msgmenu: { head_content: reply.text, list, tail_content: tail } }];
     // long reply → the text first, then the question alone with its choices right under it
     const prompt = reply.prompt && Buffer.byteLength(reply.prompt) <= MENU_HEAD_MAX ? reply.prompt : "Choose one:";
@@ -231,7 +250,8 @@ async function send(db: DB, ext: string, openKfId: string, replies: OutgoingRepl
       state.set(db, `held:${ext}`, JSON.stringify([...held, payload]));
       continue;
     }
-    await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...payload }, db);
+    const r = await post<{ msgid?: string }>("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...payload }, db);
+    console.log(`[wecom] sent ${String(payload.msgtype)} msgid=${r.msgid ?? "?"} (${Buffer.byteLength(JSON.stringify(payload))} B)`);
     state.set(db, `budget:${ext}`, String(used + 1));
     state.set(db, `last_send:${ext}`, nowIso());
   }
