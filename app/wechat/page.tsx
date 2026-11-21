@@ -81,7 +81,7 @@ export default async function WeChatPage() {
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <h2 className="text-[14px] font-semibold">How to start</h2>
             </div>
-            <ol className="px-5 pb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <ol className="px-5 pb-5 grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
               {[
                 ["Scan", "Open WeChat → + → Scan, and point it at the code. The Memini chat opens."],
                 ["Forward", "Send a message, file, photo or voice note. Several in a row are read together."],
