@@ -1,4 +1,4 @@
-// THE one core entry point (blueprint §10.3). WeChat, the simulator and web uploads all call handleIncoming(),
+// THE one core entry point (blueprint §10.3). WeChat and the web chat on Home both call handleIncoming(),
 // so every surface behaves identically. Grouping/debounce happens in the channel; one call = one group.
 //
 // content → extract each item → WHO is it from? (entity: certain or ask) → WHICH matter? (deterministic or ask)

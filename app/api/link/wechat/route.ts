@@ -7,7 +7,7 @@ import { contactLink, wecomConfigured } from "@/lib/channels/wecom";
 export const runtime = "nodejs";
 
 export async function POST() {
-  if (!wecomConfigured()) return NextResponse.json({ error: "WeChat is not configured yet (see blueprint §13). Use the simulator at /sim." }, { status: 503 });
+  if (!wecomConfigured()) return NextResponse.json({ error: "WeChat is not configured yet (see blueprint §13). Open the WeChat page for setup steps." }, { status: 503 });
   const db = await appDb();
   const scene = crypto.randomBytes(6).toString("hex");
   const code = String(crypto.randomInt(100000, 1000000)); // fallback: type this 6-digit code in the chat

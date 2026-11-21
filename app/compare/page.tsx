@@ -2,7 +2,7 @@ import Link from "next/link";
 import { appDb, CURRENT_WS } from "@/lib/server";
 import { comparisons, COMPARE_KEYS } from "@/lib/core/memory";
 import { factLabel } from "@/lib/core/facts";
-import { Card, PageHeader, Section, TrustPill, Empty, Pill } from "@/components/ui";
+import { Card, Page, PageHeader, Section, TrustPill, Empty, Pill } from "@/components/ui";
 import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export default async function ComparePage() {
   const num = (v?: string) => (v ? Number(v.replace(/[^\d.]/g, "")) : NaN);
 
   return (
-    <div className="rise">
+    <Page>
       <PageHeader title="Compare quotes" description="Only suppliers quoting the same product are compared. Set the product on a purchase to group it here." />
       {!multi.length && <Card><Empty icon="scale">No product has two quotes yet.</Empty></Card>}
       {multi.map((g) => {
@@ -30,12 +30,12 @@ export default async function ComparePage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-left">
-                    <th className="px-4 py-3 w-40" />
+                    <th className="px-5 py-3.5 w-40" />
                     {g.rows.map((r) => (
-                      <th key={r.matter_id} className="px-4 py-3 align-top font-normal min-w-44">
+                      <th key={r.matter_id} className="px-5 py-3.5 align-top font-normal min-w-44">
                         <Link href={`/matters/${r.matter_id}`} className="hover:underline">
-                          <div className="text-xs text-muted">{r.label}</div>
-                          <div className="font-medium text-sm">{r.name}</div>
+                          <div className="text-[12.5px] text-muted">{r.label}</div>
+                          <div className="font-medium text-[14px]">{r.name}</div>
                         </Link>
                         <div className="mt-1.5"><TrustPill trust={r.trust} /></div>
                       </th>
@@ -45,12 +45,12 @@ export default async function ComparePage() {
                 <tbody className="divide-y divide-line">
                   {COMPARE_KEYS.map((k) => (
                     <tr key={k}>
-                      <td className="px-4 py-2.5 text-muted">{factLabel(k)}</td>
+                      <td className="px-5 py-3 text-muted">{factLabel(k)}</td>
                       {g.rows.map((r) => {
                         const t = r.terms[k];
                         const isBest = (k === "unit_price" && num(t?.value) === bestPrice) || (k === "lead_time_days" && num(t?.value) === bestLead);
                         return (
-                          <td key={r.matter_id} className="px-4 py-2.5 align-top">
+                          <td key={r.matter_id} className="px-5 py-3 align-top">
                             {t ? (
                               <>
                                 <span className={`tabular font-medium ${t.conflicting ? "text-bad" : ""}`}>{t.value}</span>
@@ -65,17 +65,17 @@ export default async function ComparePage() {
                     </tr>
                   ))}
                   <tr>
-                    <td className="px-4 py-2.5 text-muted">Business license</td>
-                    {g.rows.map((r) => <td key={r.matter_id} className="px-4 py-2.5">{r.has_license ? <span className="text-ok">Received</span> : <span className="text-warn">Missing</span>}</td>)}
+                    <td className="px-5 py-3 text-muted">Business license</td>
+                    {g.rows.map((r) => <td key={r.matter_id} className="px-5 py-3">{r.has_license ? <span className="text-ok">Received</span> : <span className="text-warn">Missing</span>}</td>)}
                   </tr>
                   <tr>
-                    <td className="px-4 py-2.5 text-muted">Open checks</td>
-                    {g.rows.map((r) => <td key={r.matter_id} className="px-4 py-2.5 tabular">{r.open_red ? <span className="text-bad">{r.open_red} high</span> : null}{r.open_red && r.open_amber ? " · " : ""}{r.open_amber ? <span className="text-warn">{r.open_amber} to check</span> : null}{!r.open_red && !r.open_amber && <span className="text-faint">—</span>}</td>)}
+                    <td className="px-5 py-3 text-muted">Open checks</td>
+                    {g.rows.map((r) => <td key={r.matter_id} className="px-5 py-3 tabular">{r.open_red ? <span className="text-bad">{r.open_red} high</span> : null}{r.open_red && r.open_amber ? " · " : ""}{r.open_amber ? <span className="text-warn">{r.open_amber} to check</span> : null}{!r.open_red && !r.open_amber && <span className="text-faint">—</span>}</td>)}
                   </tr>
                 </tbody>
               </table>
             </Card>
-            {incos.size > 1 && <p className="text-xs text-warn mt-2 flex items-center gap-1"><Icon name="alert" className="size-3.5" />Different Incoterms ({[...incos].join(" vs ")}): an EXW price leaves export and inland freight to you, so it isn&apos;t comparable with FOB.</p>}
+            {incos.size > 1 && <p className="text-[12.5px] text-warn mt-2 flex items-center gap-1"><Icon name="alert" className="size-3.5" />Different Incoterms ({[...incos].join(" vs ")}): an EXW price leaves export and inland freight to you, so it isn&apos;t comparable with FOB.</p>}
           </Section>
         );
       })}
@@ -83,13 +83,13 @@ export default async function ComparePage() {
         <Section title="Only one quote so far">
           <Card className="divide-y divide-line">
             {single.map((g) => (
-              <Link key={g.key} href={`/matters/${g.rows[0].matter_id}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-hover">
-                <span className="flex-1">{g.subject}</span><span className="text-xs text-muted">{g.rows[0].label}</span>
+              <Link key={g.key} href={`/matters/${g.rows[0].matter_id}`} className="flex items-center gap-3 px-5 py-3 text-[14px] hover:bg-hover">
+                <span className="flex-1">{g.subject}</span><span className="text-[12.5px] text-muted">{g.rows[0].label}</span>
               </Link>
             ))}
           </Card>
         </Section>
       )}
-    </div>
+    </Page>
   );
 }

@@ -4,7 +4,7 @@ import { listEntities, resolveEntity, entityLabel, type Clue } from "@/lib/core/
 import { documentClues, originalFileName } from "@/lib/core/extract";
 import { ENTITY_KINDS, type EntityKind } from "@/lib/core/domain";
 import { InboxList, type InboxItem } from "@/components/InboxList";
-import { PageHeader } from "@/components/ui";
+import { Page, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "To file" };
@@ -29,9 +29,9 @@ export default async function InboxPage() {
   });
   const kinds = (profile.def.entityKinds as readonly EntityKind[]).filter((k) => !k.startsWith("self")).map((k) => ({ key: k, label: ENTITY_KINDS[k].label }));
   return (
-    <div className="rise max-w-3xl">
+    <Page narrow>
       <PageHeader title="To file" description="I never guess who something is from. These had no name or code I could match for sure — pick the contact and I'll file it, check it and track its dates." />
       <InboxList items={items} contacts={contacts} kinds={kinds} />
-    </div>
+    </Page>
   );
 }

@@ -2,7 +2,7 @@ import { appDb, CURRENT_WS } from "@/lib/server";
 import { listTasks, ensureRecurring } from "@/lib/core/tasks";
 import { taskViews } from "@/lib/views";
 import { TaskList } from "@/components/Detail";
-import { Card, PageHeader, Section } from "@/components/ui";
+import { Card, Page, PageHeader, Section } from "@/components/ui";
 import { addDays, today } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export default async function DeadlinesPage() {
   const done = listTasks(db, CURRENT_WS, { status: "done" }).slice(-8).reverse();
 
   return (
-    <div className="rise max-w-3xl">
+    <Page narrow>
       <PageHeader title="Deadlines" description="Promises from the other side, official deadlines, renewals from expiry dates and recurring payments — all in one list. Tick them off as they happen." />
       {!buckets.length && <Card><TaskList tasks={[]} empty="Nothing open. Forward a contract, notice or message with a date and I'll track it." /></Card>}
       {buckets.map((b) => (
@@ -36,6 +36,6 @@ export default async function DeadlinesPage() {
           <Card><TaskList tasks={taskViews(done)} /></Card>
         </Section>
       )}
-    </div>
+    </Page>
   );
 }

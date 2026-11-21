@@ -32,7 +32,7 @@ The app seeds demo data on first run. Switch profile and reload demo data in **S
 
 `lib/core/domain.ts` is the registry: adding a new kind of bureaucracy = a matter kind + its document types + fact keys there; no schema change.
 
-Flow (`lib/core/ingest.ts`, the one entry point for WeChat, simulator and uploads):
+Flow (`lib/core/ingest.ts`, the one entry point for WeChat and the web chat on Home):
 **extract → who is it from?** (certain only from a license/contract/notice identifier, otherwise a menu — never guessed)
 **→ which matter?** (by document type + product/subject; ambiguous → menu) **→ facts + tasks → audit → reply** (alerts, next steps, Chinese draft).
 
@@ -76,6 +76,6 @@ Errors you may see: **60020** IP not trusted (step 5) · **95027** account limit
 | `lib/core/` | domain registry, ingest pipeline, entities, matters, facts, tasks, audit, extraction, replies, assistant |
 | `lib/channels/` | WeCom crypto (unit-tested), access_token, `sync_msg`, media download, 6 s debounce, send budget, `msgmenu` |
 | `lib/adapters/` | LLM (mock · gateway · anthropic · qwen; model per step; cost log), ASR, company registry |
-| `app/` | web app (Today, To file, Matters, Deadlines, Compare quotes, Contacts, Documents, Ask, WeChat simulator, Settings) + API routes |
+| `app/` | web app (Home chat + memory, To file, Matters, Deadlines, Compare quotes, Contacts, Documents, WeChat bot, Settings) + API routes; pages refresh live via /api/pulse |
 | `data/` | fictional registry with valid credit codes, demo documents with planted traps, golden answers |
 | `tests/` | unit + end-to-end flows (`npm test`), live AI suite (`npm run test:live`) |

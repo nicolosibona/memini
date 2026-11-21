@@ -1,49 +1,92 @@
 @import "tailwindcss";
 
+/* Memini UI v3 — one system: warm near-white ground, near-black ink, hairlines, one accent (seal vermilion).
+   The interface stays neutral; colour only where it carries meaning (state, live WeChat, the one main action). */
 @theme {
-  --color-ink: #17191e;
-  --color-ink-2: #3a3e47;
-  --color-muted: #6b7080;
-  --color-faint: #9aa0ad;
-  --color-line: #e7e5e0;
-  --color-line-2: #f0eeea;
-  --color-paper: #f7f6f3;
+  --color-ink: #1a1917;
+  --color-ink-2: #45423d;
+  --color-muted: #6f6b64;
+  --color-faint: #a7a39b;
+  --color-line: #ebe8e3;
+  --color-line-2: #f3f1ed;
+  --color-paper: #faf9f7;
   --color-card: #ffffff;
-  --color-hover: #f3f2ee;
+  --color-hover: #f4f2ee;
 
-  --color-brand: #b8322a; /* seal red */
-  --color-brand-dark: #95271f;
-  --color-brand-soft: #f8e9e6;
+  --color-brand: #d23f2e; /* seal vermilion */
+  --color-brand-dark: #ad3120;
+  --color-brand-soft: #fcede9;
 
-  --color-ok: #2f7a55;
-  --color-ok-soft: #e7f2ec;
-  --color-warn: #a8650b;
-  --color-warn-soft: #faf0de;
-  --color-bad: #c0392b;
-  --color-bad-soft: #fbe9e7;
-  --color-info: #3b5b8c;
-  --color-info-soft: #e9eff8;
+  --color-wechat: #07c160;
+  --color-wechat-dark: #05994c;
+  --color-wechat-soft: #e5f7ed;
 
-  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-ok: #1d8556;
+  --color-ok-soft: #e6f4ec;
+  --color-warn: #b06a08;
+  --color-warn-soft: #fbf1df;
+  --color-bad: #cc3229;
+  --color-bad-soft: #fcebe9;
+  --color-info: #2c63c9;
+  --color-info-soft: #eaf0fb;
+
+  --font-sans: var(--font-geist), ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-display: var(--font-instrument), "Songti SC", "STSong", Georgia, serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
   --font-seal: "Songti SC", "STSong", "Noto Serif SC", serif;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-html { -webkit-text-size-adjust: 100%; }
-body {
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-feature-settings: "cv11", "ss01";
+/* base rules live in the base layer so Tailwind utilities can override them */
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-feature-settings: "ss01", "cv11";
+    letter-spacing: -0.005em;
+  }
+  ::selection { background: var(--color-brand-soft); }
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 }
-
-::selection { background: var(--color-brand-soft); }
-
-/* subtle entrance, once */
-@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise 0.25s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
 
 .tabular { font-variant-numeric: tabular-nums; }
+.display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.015em; }
+
+/* ── motion: one entrance on load, quiet hover, press; never on scroll ── */
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.enter { animation: enter 0.6s var(--ease-out-soft) both; }
+.enter-2 { animation: enter 0.6s var(--ease-out-soft) 0.08s both; }
+.enter-3 { animation: enter 0.6s var(--ease-out-soft) 0.16s both; }
+.rise { animation: enter 0.4s var(--ease-out-soft) both; }
+
+.lift { transition: transform 0.2s var(--ease-out-soft), border-color 0.2s, background-color 0.2s; }
+.lift:hover { transform: translateY(-2px); border-color: #dcd8d1; }
+.press { transition: transform 0.12s, background-color 0.15s, opacity 0.15s; }
+.press:active:not(:disabled) { transform: scale(0.97); }
+
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgb(7 193 96 / 0.45); } 70% { box-shadow: 0 0 0 6px rgb(7 193 96 / 0); } 100% { box-shadow: 0 0 0 0 rgb(7 193 96 / 0); } }
+.live-dot { animation: pulse-ring 2.4s infinite; }
+
+@keyframes flash { from { background-color: var(--color-brand-soft); } to { background-color: transparent; } }
+.flash { animation: flash 2.4s ease-out; }
+
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+.toast-in { animation: toast-in 0.35s var(--ease-out-soft) both; }
+
+@keyframes dots { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+.typing span { animation: dots 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .enter, .enter-2, .enter-3, .rise, .toast-in, .flash, .live-dot, .typing span { animation: none; }
+  .lift:hover { transform: none; }
+}
+
+/* thin, quiet scrollbars */
+* { scrollbar-width: thin; scrollbar-color: #dcd8d1 transparent; }
 
 @media print {
   .no-print { display: none !important; }

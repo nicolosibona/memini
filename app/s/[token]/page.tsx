@@ -17,8 +17,8 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   const db = await appDb();
   if (t.kind === "m" ? !getMatter(db, t.id) : !getEntity(db, t.id)) notFound();
   return (
-    <div className="max-w-xl mx-auto">
-      <div className="text-xs text-muted mb-4 flex items-center gap-1.5"><span className="grid place-items-center size-5 rounded bg-brand text-white text-[10px] font-[family-name:var(--font-seal)]">印</span>Memini · verify before paying</div>
+    <div className="max-w-xl mx-auto px-4 py-6">
+      <div className="text-[13px] text-muted mb-6 flex items-center gap-2"><span className="grid place-items-center size-6 rounded-md bg-brand text-white text-[12px] font-[family-name:var(--font-seal)]">印</span><span className="display text-[18px] text-ink">Memini</span><span className="text-faint">·</span>verify before paying</div>
       {t.kind === "m" ? <MatterDetail db={db} id={t.id} compact /> : <EntityDetail db={db} id={t.id} compact />}
     </div>
   );

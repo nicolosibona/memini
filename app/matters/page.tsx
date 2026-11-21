@@ -5,7 +5,7 @@ import { trustLight, openAlerts } from "@/lib/core/audit";
 import { listTasks } from "@/lib/core/tasks";
 import { getEntity, entityLabel } from "@/lib/core/entities";
 import { MATTER_KINDS, type MatterKind } from "@/lib/core/domain";
-import { Card, PageHeader, Section, Progress, TrustPill, Empty, fmtDate, relDay, Pill } from "@/components/ui";
+import { Card, Page, PageHeader, Section, Progress, TrustPill, Empty, fmtDate, relDay, Pill } from "@/components/ui";
 import { Icon, MATTER_ICON } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
@@ -23,14 +23,14 @@ export default async function MattersPage({ searchParams }: { searchParams: Prom
   const tabs = [["open", "Open"], ["done", "Done"], ["all", "All"]] as const;
 
   return (
-    <div className="rise">
+    <Page>
       <PageHeader
         title={profile.key === "china_business" ? "Matters" : "Purchases"}
         description="Every case you're working on — a purchase, a permit, a lease, your tax filings — with its documents, terms, checks and deadlines."
       />
-      <div className="flex gap-1 mb-6 text-[13px]">
+      <div className="inline-flex gap-1 mb-8 p-1 rounded-full border border-line bg-card text-[13.5px]">
         {tabs.map(([k, l]) => (
-          <Link key={k} href={`/matters?status=${k}`} className={`rounded-md px-2.5 py-1 ${status === k ? "bg-ink text-white" : "text-muted hover:bg-hover"}`}>
+          <Link key={k} href={`/matters?status=${k}`} className={`press rounded-full px-4 h-8 inline-flex items-center gap-1.5 ${status === k ? "bg-ink text-white" : "text-muted hover:text-ink hover:bg-hover"}`}>
             {l} <span className="tabular opacity-70">{all.filter((m) => (k === "all" ? true : k === "done" ? ["done", "archived"].includes(m.status) : ["open", "waiting"].includes(m.status))).length}</span>
           </Link>
         ))}
@@ -45,13 +45,13 @@ export default async function MattersPage({ searchParams }: { searchParams: Prom
               const next = listTasks(db, CURRENT_WS, { matterId: m.id, status: "open" })[0];
               const alerts = openAlerts(db, { matterId: m.id });
               return (
-                <Link key={m.id} href={`/matters/${m.id}`} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_160px_150px_110px] items-center gap-3 px-4 py-3 hover:bg-hover transition-colors">
+                <Link key={m.id} href={`/matters/${m.id}`} className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_160px_150px_110px] items-center gap-3 px-5 py-3.5 hover:bg-hover transition-colors">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{m.title}</div>
-                    <div className="text-xs text-muted truncate">{e ? entityLabel(e) : "—"}{alerts.length ? ` · ${alerts.length} alert${alerts.length > 1 ? "s" : ""}` : ""}</div>
+                    <div className="text-[14px] font-medium truncate">{m.title}</div>
+                    <div className="text-[12.5px] text-muted truncate">{e ? entityLabel(e) : "—"}{alerts.length ? ` · ${alerts.length} alert${alerts.length > 1 ? "s" : ""}` : ""}</div>
                   </div>
-                  <div className="hidden sm:block">{cl.length ? <Progress done={cl.filter((c) => c.done).length} total={cl.length} /> : <span className="text-xs text-faint">No checklist</span>}</div>
-                  <div className="hidden sm:block text-xs">
+                  <div className="hidden sm:block">{cl.length ? <Progress done={cl.filter((c) => c.done).length} total={cl.length} /> : <span className="text-[12.5px] text-faint">No checklist</span>}</div>
+                  <div className="hidden sm:block text-[12.5px]">
                     {next?.due_at ? <><div className="truncate text-ink-2">{next.what}</div><div className={next.due_at < new Date().toISOString().slice(0, 10) ? "text-bad" : "text-muted"}>{fmtDate(next.due_at)} · {relDay(next.due_at)}</div></> : <span className="text-faint">No deadline</span>}
                   </div>
                   <div className="flex justify-end">{m.status === "open" || m.status === "waiting" ? <TrustPill trust={trustLight(db, { matterId: m.id })} /> : <Pill>{m.status}</Pill>}</div>
@@ -61,6 +61,6 @@ export default async function MattersPage({ searchParams }: { searchParams: Prom
           </Card>
         </Section>
       ))}
-    </div>
+    </Page>
   );
 }
