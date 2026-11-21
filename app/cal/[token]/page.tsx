@@ -16,7 +16,7 @@ export const metadata = { title: "Add to Calendar", robots: { index: false } };
 export default async function CalendarPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const db = await appDb();
-  const t = resolveToken(db, token, "calendar");
+  const t = resolveToken(db, token, "calendar", { touch: false }); // viewing the page is not subscribing
   if (!t) notFound();
   const ua = (await headers()).get("user-agent") ?? "";
   const inWeChat = /MicroMessenger/i.test(ua);

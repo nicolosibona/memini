@@ -75,6 +75,45 @@ describe("live calendar (.ics)", () => {
   });
 });
 
+describe("dates from WeChat → iPhone calendar", async () => {
+  const { calendarSubscribed } = await import("@/lib/core/tokens");
+  const db = openDb(":memory:");
+  await resetDemo(db, { profile: "sourcing" });
+  const send = (items: Item[]) => handleIncoming({ userId: DEMO_USER, channel: "sim", items }, db);
+  const s1 = listEntities(db, DEMO_WORKSPACE).find((e) => e.display_name === "Shenzhen ABC Tech")!.id;
+  const fileDated = async () => {
+    const [r] = await send([{ kind: "text", text: DEMO_TEXTS.lisa }]);
+    return r.buttons?.some((b) => b.id.startsWith("ent:")) ? (await send([{ kind: "text", menuId: `ent:${s1}` }]))[0] : r;
+  };
+
+  it("not subscribed: a forward with a date offers 📅, and the tap gives the one-time Safari steps", async () => {
+    expect(calendarSubscribed(db, DEMO_USER)).toBe(false);
+    const r = await fileDated();
+    const b = r.buttons!.find((x) => x.id === "cal:add")!;
+    expect(b.label).toBe("📅 Add to iPhone calendar");
+    const [steps] = await send([{ kind: "text", menuId: b.id }]);
+    expect(steps.text).toMatch(/https:\/\/memini\.test\/cal\/[a-z0-9]+/);
+    expect(steps.text).toContain("Open in Safari");
+  });
+
+  it("viewing the page is not subscribing; a calendar app fetching the feed is", () => {
+    const token = userToken(db, DEMO_USER, "calendar");
+    resolveToken(db, token, "calendar", { touch: false });
+    expect(calendarSubscribed(db, DEMO_USER)).toBe(false);
+    resolveToken(db, token, "calendar"); // the feed route
+    expect(calendarSubscribed(db, DEMO_USER)).toBe(true);
+    expect(calendarSubscribed(db, DEMO_USER, Date.now() + 4 * 86400_000)).toBe(false); // silent for days → not any more
+  });
+
+  it("subscribed: no button, the reply says the date is already in the calendar", async () => {
+    const r = await fileDated();
+    expect(r.buttons!.some((x) => x.id === "cal:add")).toBe(false);
+    expect(r.text).toContain("📅 Already in your iPhone calendar");
+    const [again] = await send([{ kind: "text", text: "/calendar" }]);
+    expect(again.text).toContain("already subscribed");
+  });
+});
+
 // ── supplier confirmation link + Chinese bubbles ──
 describe("confirmation link for the supplier", async () => {
   const db = openDb(":memory:");

@@ -56,7 +56,8 @@ describe("sourcing demo script", async () => {
     const [r] = await send([{ kind: "text", menuId: `ent:${s1}` }]);
     expect(r.text).toContain("Filed under: Seller 1");
     expect(r.text).toContain("65W USB-C charger");
-    expect(r.buttons!.map((b) => b.label)).toEqual(["📋 Chinese reply only (to forward)", "✏️ Change where it's filed", "✅ Mark terms as agreed", "🔗 Confirmation link for them"]);
+    expect(r.buttons!.map((b) => b.label)).toEqual(["📋 Chinese reply only (to forward)", "📅 Add to iPhone calendar", "✏️ Change where it's filed", "✅ Mark terms as agreed", "🔗 Confirmation link for them"]);
+    expect(r.text).toMatch(/⏰ Tracked: Ship the sample \(/); // a dated promise → offered for the phone calendar
     expect(r.copy?.text).toMatch(/[\u4e00-\u9fff]/); // the Chinese draft, alone
     const price = currentTerms(db, { matterId: purchase1().id }).find((t) => t.key === "unit_price")!;
     expect(JSON.parse(price.current.value_json).amount).toBe(4.2);

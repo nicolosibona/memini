@@ -18,7 +18,7 @@ import { addTask, deriveDocumentTasks, deriveFactTasks, ensureRecurring, listTas
 import { analysisButtons, canReplyTo, chineseDraftIn, COPY_LABEL, consistentTerms, detailsLine, draftReply, formatAlerts, formatTranslation, type OutgoingReply } from "./reply";
 import { indexText, reindexScope, entityProfile } from "./memory";
 import { ask } from "./assistant";
-import { userToken } from "./tokens";
+import { calendarSubscribed, userToken } from "./tokens";
 import { createConfirmLink, missingDocs, termChoices } from "./confirm";
 import { calendarPageUrl } from "./calendar";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
@@ -394,6 +394,7 @@ const subjectOf = (x: Extracted | null) => (x ? x.data.subject ?? null : null);
 /** Link messages → entity + matter → facts, tasks, aliases → audit → reply. */
 async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entityId: string, clues: Clue[], aliasSource: "document" | "user_choice", prefix?: string, forcedMatterId?: string): Promise<OutgoingReply[]> {
   const entity = getEntity(db, entityId)!;
+  const startedAt = nowIso(); // deadlines created from here on came from these items (→ the phone calendar)
   // which matter? (one per matter kind in this group; ambiguous → ask)
   const matterByKind = new Map<MatterKind, MatterRow>();
   const createdMatters: string[] = [];
@@ -458,7 +459,7 @@ async function assign(db: DB, ws: string, userId: string, msgs: MsgRow[], entity
   const asgId = newId("asg");
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'resolved')`)
     .run(asgId, userId, JSON.stringify(msgs.map((m) => m.id)), JSON.stringify([entityId]), JSON.stringify({ clues, learnedAliasIds: learned, entityId, matterIds, createdMatters }), "assignment", nowIso());
-  return [await analysisReply(db, ws, entityId, matterIds, asgId, { saved, translations, docs, newAlerts, prefix, trShown, docShown })];
+  return [await analysisReply(db, ws, entityId, matterIds, asgId, { saved, translations, docs, newAlerts, prefix, trShown, docShown, userId, startedAt })];
 }
 
 function askWhichMatter(db: DB, userId: string, msgs: MsgRow[], entityId: string, clues: Clue[], matters: MatterRow[]): OutgoingReply[] {
@@ -470,7 +471,7 @@ function askWhichMatter(db: DB, userId: string, msgs: MsgRow[], entityId: string
   return [{ kind: "menu", text: `This is from ${entityLabel(e)}. Which of their matters is it about?`, buttons: [...matters.map((m) => ({ id: `mat:${m.id}`, label: `${MATTER_KINDS[m.kind].icon} ${m.title}` })), { id: "mat:new", label: "➕ Something new" }] }];
 }
 
-async function analysisReply(db: DB, ws: string, entityId: string, matterIds: string[], asgId: string, o: { saved: FactRow[]; translations: TextExtraction[]; docs: DocumentExtraction[]; newAlerts: AlertRow[]; prefix?: string; trShown?: boolean[]; docShown?: boolean[] }): Promise<OutgoingReply> {
+async function analysisReply(db: DB, ws: string, entityId: string, matterIds: string[], asgId: string, o: { saved: FactRow[]; translations: TextExtraction[]; docs: DocumentExtraction[]; newAlerts: AlertRow[]; prefix?: string; trShown?: boolean[]; docShown?: boolean[]; userId?: string; startedAt?: string }): Promise<OutgoingReply> {
   const p = entityProfile(db, entityId)!;
   const e = p.entity;
   const matters = matterIds.map((id) => getMatter(db, id)!).filter(Boolean);
@@ -504,8 +505,14 @@ async function analysisReply(db: DB, ws: string, entityId: string, matterIds: st
     const key = o.saved.filter((f) => ["unit_price", "incoterm", "lead_time_days", "moq", "order_qty", "deposit_pct", "rent_amount", "security_deposit", "amount_due"].includes(f.key));
     if (key.length) parts.push(`📝 Noted: ${[...new Map(key.map((f) => [f.key, `${factLabel(f.key).replace(/ \(.*\)/, "").toLowerCase()} ${formatValue(f.key, parseValue(f.value_json))}`])).values()].join(" · ")}`);
   }
-  const promises = o.translations.flatMap((t) => t.tasks).concat(o.docs.flatMap((x) => x.tasks));
-  if (promises.length) parts.push(`⏰ Tracked: ${promises.map((t) => `${t.what}${t.due ? ` (${fmtDay(t.due)})` : ""}`).join("; ")}`);
+  // every date that came in with these items (promises, deadlines, renewals from an expiry date…) is a calendar event
+  const dated = o.startedAt && matterIds.length
+    ? (db.prepare(`SELECT what, due_at FROM tasks WHERE workspace_id = ? AND status = 'open' AND due_at IS NOT NULL AND created_at >= ? AND matter_id IN (${matterIds.map(() => "?").join(",")}) ORDER BY due_at`).all(ws, o.startedAt, ...matterIds) as { what: string; due_at: string }[])
+    : [];
+  const undated = o.translations.flatMap((t) => t.tasks).concat(o.docs.flatMap((x) => x.tasks)).filter((t) => !t.due);
+  const tracked = [...dated.map((t) => `${t.what} (${fmtDay(t.due_at)})`), ...undated.map((t) => t.what)];
+  const subscribed = !!o.userId && calendarSubscribed(db, o.userId);
+  if (tracked.length) parts.push(`⏰ Tracked: ${tracked.join("; ")}${dated.length && subscribed ? `\n📅 Already in your iPhone calendar, with reminders.` : ""}`);
   // never nudge a payment while a red flag is open on this counterparty
   const redOpen = [...fresh, ...stillOpen].some((a) => a.severity === "red");
   // applies to the model's suggestions too: no "pay the deposit" while the payee or the amount is in doubt
@@ -520,7 +527,8 @@ async function analysisReply(db: DB, ws: string, entityId: string, matterIds: st
   parts.push(detailsLine(matters.length === 1 ? "m" : "e", matters.length === 1 ? matters[0].id : entityId));
   const linkable = canReplyTo(e.kind) && matters.some((m) => termChoices(db, m.id).length || missingDocs(db, m).length);
   return {
-    kind: "menu", text: parts.join("\n\n"), prompt: "Anything to fix?", buttons: analysisButtons(asgId, { link: linkable }),
+    kind: "menu", text: parts.join("\n\n"), prompt: "Anything to fix?",
+    buttons: [...(dated.length && !subscribed ? [{ id: "cal:add", label: "📅 Add to iPhone calendar" }] : []), ...analysisButtons(asgId, { link: linkable })],
     ...(canReplyTo(e.kind) && d.reply_zh ? { copy: { label: COPY_LABEL, text: d.reply_zh } } : {}),
   };
 }
@@ -618,6 +626,8 @@ async function handleMenu(db: DB, ws: string, userId: string, menuId: string): P
 
   if (prefix === "agr") return markAgreed(db, ws, arg);
 
+  if (prefix === "cal") return [calendarReply(db, userId)];
+
   if (prefix === "zh") {
     // the clean Chinese bubble: nothing but the text to forward
     const d = db.prepare(`SELECT text_original FROM messages WHERE id = ? AND workspace_id = ? AND direction = 'out'`).get(arg, ws) as { text_original: string } | undefined;
@@ -696,10 +706,7 @@ async function handleCommand(db: DB, ws: string, userId: string, cmd: string, ra
     if (options.length === 1) return confirmLinkReplies(db, userId, options[0].id);
     return [{ kind: "menu", text: "Which one should they confirm?", buttons: options.slice(0, 5).map((m) => ({ id: `lnk:m:${m.id}`, label: `${MATTER_KINDS[m.kind].icon} ${m.title}${m.entity_id ? ` – ${getEntity(db, m.entity_id)?.display_name ?? ""}` : ""}` })) }];
   }
-  if (cmd === "/calendar" || cmd === "/cal") {
-    const page = calendarPageUrl(userToken(db, userId, "calendar"));
-    return [{ kind: "text", text: `📅 All your deadlines in your iPhone Calendar, with reminders — no 48-hour limit like WeChat:\n${page}\n\nOpen the link, tap ··· (top right) → Open in Safari, then tap "Add to Calendar".` }];
-  }
+  if (cmd === "/calendar" || cmd === "/cal") return [calendarReply(db, userId)];
   const sellerN = raw.match(/^\/seller\s*(\d+)/i);
   if (sellerN) return [{ kind: "text", text: (await ask(db, ws, `What are the current terms and open issues of Seller ${sellerN[1]}?`)).text }];
   if (cmd === "agreed") {
@@ -707,6 +714,15 @@ async function handleCommand(db: DB, ws: string, userId: string, cmd: string, ra
     return last ? markAgreed(db, ws, last.id) : [{ kind: "text", text: "Nothing to mark as agreed yet." }];
   }
   return [{ kind: "text", text: "Commands: /today · /deadlines · /calendar · /link · /alerts · /contacts · /suppliers · /seller1 · agreed" }];
+}
+
+/** Subscribe once and every date Memini finds lands in the iPhone Calendar by itself. WeChat's browser can't add
+ *  calendars, so the page asks to switch to Safari — once, not for every date. */
+function calendarReply(db: DB, userId: string): OutgoingReply {
+  const page = calendarPageUrl(userToken(db, userId, "calendar"));
+  if (calendarSubscribed(db, userId))
+    return { kind: "text", text: `📅 Your iPhone calendar is already subscribed: every date I find shows up there by itself, with reminders.\n(Another phone? ${page})` };
+  return { kind: "text", text: `📅 Put every date I find in your iPhone Calendar — once, and from then on it's automatic, with reminders:\n${page}\n\n1. Open the link, tap ··· (top right) → Open in Safari\n2. Tap "Add to Calendar" → Subscribe → Add` };
 }
 
 /** Create a confirmation link and answer with (1) what's on it and (2) the Chinese message to forward, alone. */

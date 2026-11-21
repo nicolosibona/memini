@@ -33,10 +33,18 @@ export function rotateToken(db: DB, userId: string, purpose: TokenPurpose): stri
   return createToken(db, userId, purpose);
 }
 
-export function resolveToken(db: DB, token: string, purpose: TokenPurpose): TokenRow | null {
+/** `touch: false` for pages that only show the link: last_used_at must mean "a calendar app fetched the feed". */
+export function resolveToken(db: DB, token: string, purpose: TokenPurpose, o: { touch?: boolean } = {}): TokenRow | null {
   if (!/^[a-z0-9]{16,64}$/.test(token)) return null;
   const row = db.prepare(`SELECT * FROM inbound_tokens WHERE token = ? AND purpose = ? AND revoked_at IS NULL`).get(token, purpose) as TokenRow | undefined;
   if (!row) return null;
-  db.prepare(`UPDATE inbound_tokens SET last_used_at = ? WHERE token = ?`).run(nowIso(), token);
+  if (o.touch !== false) db.prepare(`UPDATE inbound_tokens SET last_used_at = ? WHERE token = ?`).run(nowIso(), token);
   return row;
+}
+
+/** A phone (or Mac) calendar is subscribed when it fetched the feed recently: iOS refreshes about every hour,
+ *  Google every few hours, so 3 days of silence means nobody is subscribed any more. */
+export function calendarSubscribed(db: DB, userId: string, now = Date.now()): boolean {
+  const row = db.prepare(`SELECT MAX(last_used_at) AS t FROM inbound_tokens WHERE user_id = ? AND purpose = 'calendar' AND revoked_at IS NULL`).get(userId) as { t: string | null };
+  return !!row.t && now - +new Date(row.t) < Number(process.env.CALENDAR_SUBSCRIBED_DAYS ?? 3) * 86400_000;
 }
