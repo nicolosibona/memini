@@ -206,6 +206,10 @@ export function heuristicTextExtraction(text: string, receivedAt: string): TextE
   if (tooling) add("tooling_fee", tooling[0], Number(tooling[1]), null, cny(tooling[2]) ? "CNY" : "USD");
   const model = text.match(/\b([A-Z]{1,4}-?\d{2,4}[A-Z]{0,2})\b/);
   if (model) add("product_model", model[0], null, model[1]);
+  const payee = text.match(/收款户名[：:]\s*([^\n，。,；;]+)/);
+  if (payee) add("bank_beneficiary_name", payee[0].trim(), null, payee[1].trim());
+  const payTerms = text.match(/付款条款[：:]\s*([^\n。；;]+)/);
+  if (payTerms) add("payment_terms", payTerms[0].trim(), null, payTerms[1].trim());
 
   const tasks: TextExtraction["tasks"] = [];
   const baseDay = localDate(receivedAt);
@@ -239,7 +243,7 @@ export function heuristicDocument(name: string, text: string): DocumentExtractio
   const doc_type = rules.find(([re]) => re.test(t))?.[1] ?? "other";
   const tx = heuristicTextExtraction(t, new Date().toISOString());
   const code = t.match(/\b[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}\b/)?.[0] ?? null;
-  const company = t.match(/[一-鿿（）()]{2,20}(?:有限公司|有限责任公司|税务局)/)?.[0] ?? null;
+  const company = t.match(/[一-鿿A-Za-z0-9（）()]{2,24}(?:有限公司|有限责任公司|股份有限公司|税务局)/)?.[0] ?? null;
   const role = doc_type === "business_license" ? "subject" : doc_type === "tax_notice" ? "authority" : doc_type === "lease_contract" ? "landlord" : "issuer";
   return {
     doc_type, language: isChinese(t) ? "zh" : "en", confidence: 0.3, title: `${DOC_TYPES[doc_type].label} (${name})`, summary: "Read with rules (no AI model).",

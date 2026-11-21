@@ -17,11 +17,12 @@ export function Sidebar({ counts }: { counts: NavCounts }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
-  if (path.startsWith("/s/")) return null; // the mobile page opened from WeChat has no app chrome
+  if (path.startsWith("/s/") || path.startsWith("/rfq/")) return null; // mobile pages opened from WeChat have no app chrome
 
   const main: Item[] = [
     { href: "/", label: "Home", icon: "home", badge: counts.alerts || undefined, tone: "bad" },
     { href: "/inbox", label: "To file", icon: "inbox", badge: counts.inbox || undefined },
+    { href: "/outreach", label: "RFQ Outreach", icon: "send" },
   ];
   const work: Item[] = [
     { href: "/matters", label: counts.business ? "Matters" : "Purchases", icon: "folder" },

@@ -48,7 +48,7 @@ export function LiveUpdates({ initial }: { initial: string }) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  if (!toast || path.startsWith("/s/")) return null;
+  if (!toast || path.startsWith("/s/") || path.startsWith("/rfq/")) return null;
   return (
     <div className="no-print fixed bottom-5 right-5 left-5 sm:left-auto z-50 toast-in" role="status">
       <Link href="/" onClick={() => setToast(null)} className="flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3 shadow-[0_12px_40px_-12px_rgb(26_25_23/0.25)] sm:w-[360px]">

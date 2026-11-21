@@ -68,7 +68,10 @@ const wsOf = (db: DB, userId: string) => {
 };
 const profileKey = (db: DB, ws: string) => (db.prepare(`SELECT profile FROM workspaces WHERE id = ?`).get(ws) as { profile: string } | undefined)?.profile ?? "china_business";
 
-export async function handleIncoming(input: { userId: string; channel: Channel; items: IncomingItem[] }, db: DB = getDb()): Promise<OutgoingReply[]> {
+export async function handleIncoming(
+  input: { userId: string; channel: Channel; items: IncomingItem[]; entityId?: string; matterId?: string },
+  db: DB = getDb(),
+): Promise<OutgoingReply[]> {
   const ws = wsOf(db, input.userId);
   const items = input.items.filter((it) => !it.externalMsgId || !db.prepare(`SELECT 1 FROM messages WHERE external_msgid = ?`).get(it.externalMsgId)); // WeCom retries
   if (!items.length) return [];
@@ -100,7 +103,7 @@ export async function handleIncoming(input: { userId: string; channel: Channel; 
   }
   if (intent.intent === "content") {
     setStatus(db, msgs, "content", "pending");
-    return processContent(db, ws, input.userId, msgs);
+    return processContent(db, ws, input.userId, msgs, { entityId: input.entityId, matterId: input.matterId });
   }
   // unsure (D7 default: ask)
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
@@ -146,7 +149,13 @@ function cluesOf(m: MsgRow, x: Extracted): Clue[] {
   return clues;
 }
 
-async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]): Promise<OutgoingReply[]> {
+async function processContent(
+  db: DB,
+  ws: string,
+  userId: string,
+  msgs: MsgRow[],
+  known?: { entityId?: string; matterId?: string },
+): Promise<OutgoingReply[]> {
   // 1. normalize + extract every item (in parallel)
   await Promise.all(msgs.map(async (m) => {
     const meta = m.extracted_json ? JSON.parse(m.extracted_json) : {};
@@ -167,6 +176,11 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
     m.extracted_json = JSON.stringify(x);
     db.prepare(`UPDATE messages SET extracted_json = ? WHERE id = ?`).run(m.extracted_json, m.id);
   }));
+
+  if (known?.entityId && getEntity(db, known.entityId)) {
+    const clues = msgs.flatMap((m) => cluesOf(m, extractedOf(m)!));
+    return assign(db, ws, userId, msgs, known.entityId, clues, "document", undefined, known.matterId);
+  }
 
   // 2. your own documents (passport, permit…) go to you — identified by name/ID number, not guessed
   const own = ownNames(db, ws);
