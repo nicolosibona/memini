@@ -23,7 +23,7 @@ ssh -o ConnectTimeout=10 -o BatchMode=yes "$TARGET" true 2>/dev/null || {
 
 echo "▸ Copying the app to $TARGET:~/memini"
 rsync -az --delete \
-  --exclude node_modules --exclude .next --exclude .next-build --exclude storage \
+  --exclude node_modules --exclude '.next*' --exclude storage \
   --exclude .env.local --exclude '.env*.local' --exclude .git --exclude .claude --exclude coverage --exclude '*.tsbuildinfo' \
   ./ "$TARGET:memini/"
 
