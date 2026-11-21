@@ -8,6 +8,8 @@ import { MATTER_KINDS, ENTITY_KINDS } from "@/lib/core/domain";
 import { alertViews, taskViews, termRows } from "@/lib/views";
 import { AlertList, TaskList, TermsTable } from "./Detail";
 import { MatterActions } from "./MatterActions";
+import { ConfirmLinkPanel } from "./ConfirmLinkPanel";
+import { canReplyTo } from "@/lib/core/reply";
 import { Card, Section, TrustPill, Empty, Progress, fmtDate, Pill } from "./ui";
 import { Icon, MATTER_ICON } from "./Icon";
 
@@ -66,6 +68,7 @@ export function MatterDetail({ db, id, compact = false }: { db: DB; id: string; 
         </div>
 
         <aside>
+          {!compact && canReplyTo(v.entity?.kind) && <div className="mb-8"><ConfirmLinkPanel matterId={m.id} counterparty={v.entity ? v.entity.display_name : null} /></div>}
           <Section title="Documents" right={v.checklist.length ? <Progress done={done} total={v.checklist.length} /> : undefined}>
             <Card className="divide-y divide-line">
               {v.checklist.map((c) => (

@@ -9,7 +9,9 @@ export type DB = Database.Database;
 
 export const DEMO_WORKSPACE = "ws_demo";
 export const DEMO_USER = "usr_demo";
-const SCHEMA_VERSION = 2;
+/** Bumped by MIGRATIONS below. Versions before BASELINE_VERSION were hackathon builds and are rebuilt from scratch;
+ *  from BASELINE_VERSION on, changes are additive only (new tables, new columns) — production data is never dropped. */
+const BASELINE_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -95,20 +97,60 @@ CREATE TABLE IF NOT EXISTS outreach_recipients (
 );
 CREATE INDEX IF NOT EXISTS ix_outreach_campaign ON outreach_recipients(campaign_id);
 CREATE INDEX IF NOT EXISTS ix_outreach_token ON outreach_recipients(token);
+-- long-lived secret URLs for the user's own feeds: purpose 'calendar' (iOS subscription) | 'email' (forwarding address)
+CREATE TABLE IF NOT EXISTS inbound_tokens (
+  token TEXT PRIMARY KEY, user_id TEXT, workspace_id TEXT, purpose TEXT, created_at TEXT, revoked_at TEXT, last_used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_inbound_user ON inbound_tokens(user_id, purpose);
+-- a page sent to a counterparty (no login): confirm the terms of a matter and/or upload missing documents
+CREATE TABLE IF NOT EXISTS share_links (
+  token TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, matter_id TEXT, entity_id TEXT,
+  terms_json TEXT, terms_hash TEXT, docs_json TEXT, contact_name TEXT,
+  status TEXT,             -- open | confirmed | changes_requested | revoked
+  created_at TEXT, expires_at TEXT, opened_at TEXT, open_count INTEGER DEFAULT 0, upload_count INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_share_matter ON share_links(matter_id);
+-- what the counterparty answered: append-only (triggers below), with the exact terms shown and their hash
+CREATE TABLE IF NOT EXISTS confirmations (
+  id INTEGER PRIMARY KEY, link_token TEXT, workspace_id TEXT, matter_id TEXT, entity_id TEXT,
+  action TEXT,             -- confirmed | changes_requested | uploaded
+  terms_json TEXT, terms_hash TEXT, note TEXT, message_id TEXT, ip TEXT, user_agent TEXT, created_at TEXT
+);
+CREATE TRIGGER IF NOT EXISTS confirmations_no_update BEFORE UPDATE ON confirmations BEGIN SELECT RAISE(ABORT, 'confirmations are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS confirmations_no_delete BEFORE DELETE ON confirmations
+  WHEN (SELECT v FROM wecom_state WHERE k = 'allow_reset') IS NOT 'yes' BEGIN SELECT RAISE(ABORT, 'confirmations are immutable'); END;
 `;
+
+/** Additive migrations, applied once each, in order. Never drop or rewrite user data here. */
+const MIGRATIONS: ((db: DB) => void)[] = [
+  // 3: share links, confirmations, inbound tokens — created by SCHEMA (CREATE IF NOT EXISTS); nothing to alter
+  () => {},
+];
+const SCHEMA_VERSION = BASELINE_VERSION + MIGRATIONS.length;
+
+/** ALTER TABLE … ADD COLUMN, only if the column is missing (for future migrations). */
+export function ensureColumn(db: DB, table: string, column: string, type: string) {
+  const cols = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
+}
 
 export function openDb(file: string): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
-  const v = db.pragma("user_version", { simple: true }) as number;
-  if (v !== SCHEMA_VERSION) {
-    // hackathon: no production data yet → rebuild on schema change (keeps WeChat cursor/token)
+  let v = db.pragma("user_version", { simple: true }) as number;
+  if (v > 0 && v < BASELINE_VERSION) {
+    // pre-baseline hackathon build: rebuild (keeps WeChat cursor/token)
     const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table') AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'search_index_%' AND name != 'wecom_state'`).all() as { name: string }[];
     for (const t of tables) db.exec(`DROP TABLE IF EXISTS "${t.name}"`);
-    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    v = 0;
   }
   db.exec(SCHEMA);
+  if (v === 0) v = BASELINE_VERSION; // fresh database: SCHEMA already has everything up to the baseline
+  db.transaction(() => {
+    for (let i = v - BASELINE_VERSION; i < MIGRATIONS.length; i++) MIGRATIONS[i](db);
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  })();
   seedBase(db);
   return db;
 }

@@ -12,7 +12,27 @@ import { shareUrl } from "./links";
 export type Button = { id: string; label: string };
 /** `prompt`: the short question right above the choices. On WeChat a long reply goes out as text first and the menu
  *  follows with just this question, so the choices sit under it instead of under a wall of text. */
-export type OutgoingReply = { kind: "text" | "menu"; text: string; buttons?: Button[]; prompt?: string };
+/** `copy`: Chinese text meant to be sent on as it is. WeChat gets a "📋 Chinese only" button that answers with a clean
+ *  bubble holding just that text (easy to long-press → Forward/Copy; the tap also resets WeChat's send budget);
+ *  the web chat shows it in its own card with a Copy button. */
+export type OutgoingReply = { kind: "text" | "menu"; text: string; buttons?: Button[]; prompt?: string; copy?: { label: string; text: string } };
+
+/** The Chinese part of an answer meant to be sent as it is (a draft in an assistant answer): the run of mostly-Chinese
+ *  lines. Short quotes inside English sentences (names, phrases) don't count. */
+export function chineseDraftIn(text: string): string | null {
+  const cjk = (l: string) => (l.match(/[\u3400-\u9fff]/g) ?? []).length;
+  const isZh = (l: string) => { const t = l.replace(/[\s"“”「」>*_`•-]/g, ""); return cjk(t) >= 6 && cjk(t) / Math.max(t.length, 1) >= 0.5; };
+  const lines = text.split("\n");
+  let best: string[] = [], cur: string[] = [];
+  for (const l of lines) {
+    if (isZh(l)) cur.push(l.trim().replace(/^[>"“「]+|["”」]+$/g, ""));
+    else if (l.trim() === "" && cur.length) continue;
+    else { if (cur.join("").length > best.join("").length) best = cur; cur = []; }
+  }
+  if (cur.join("").length > best.join("").length) best = cur;
+  const out = best.join("\n").trim();
+  return cjk(out) >= 12 ? out : null;
+}
 
 const SEV: Record<string, string> = { red: "🔴", amber: "🟡", info: "ℹ️" };
 
@@ -138,9 +158,12 @@ ${p.missingLicense ? "No business license received yet.\n" : ""}What just arrive
   return { ...r.data, reply_zh: replyable ? r.data.reply_zh : "" };
 }
 
-export const analysisButtons = (assignmentId: string): Button[] => [
+export const analysisButtons = (assignmentId: string, o: { link?: boolean } = {}): Button[] => [
   { id: `chg:${assignmentId}`, label: "✏️ Change where it's filed" },
   { id: `agr:${assignmentId}`, label: "✅ Mark terms as agreed" },
+  ...(o.link ? [{ id: `lnk:${assignmentId}`, label: "🔗 Confirmation link for them" }] : []),
 ];
+
+export const COPY_LABEL = "📋 Chinese reply only (to forward)";
 
 export const detailsLine = (kind: "e" | "m", id: string) => `🔗 Details: ${shareUrl(kind, id)}`;

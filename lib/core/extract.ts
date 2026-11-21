@@ -191,7 +191,7 @@ const WEEKDAYS: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 
 export function heuristicTextExtraction(text: string, receivedAt: string): TextExtraction {
   const facts: TextExtraction["facts"] = [];
   const add = (key: FactKey, quote: string, num: number | null, txt: string | null, cur: string | null = null) => facts.push({ key, value_number: num, value_text: txt, currency: cur, quote_original: quote });
-  const cny = (u: string | undefined) => /元|块|人民币|rmb|cny/i.test(u ?? "");
+  const cny = (u: string | undefined) => /块|人民币|rmb|cny/i.test(u ?? "") || /(^|[^美欧港日])元/.test(u ?? ""); // 美元 is USD, not 元
 
   const rent = text.match(/(?:房租|租金|月租)[^\d]{0,6}(\d[\d,]*(?:\.\d+)?)\s*(元|块|人民币|rmb)?/i);
   if (rent) add("rent_amount", rent[0], Number(rent[1].replace(/,/g, "")), null, "CNY");

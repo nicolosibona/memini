@@ -47,3 +47,4 @@ model-probe.json
 /storage/
 *.db
 /.next-build/
+/.next-preview/

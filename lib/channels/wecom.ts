@@ -153,6 +153,8 @@ async function enqueue(db: DB, m: KfMsg, fallbackOpenKfId = "") {
   if (!ext || !kfid) return;
   if (m.origin === 3) {
     state.set(db, `budget:${ext}`, "0"); // a user message resets the send budget [VERIFY] whether a menu tap does
+    state.set(db, `last_in:${ext}`, nowIso()); // opens WeChat's 48 h window for notify()
+    state.set(db, `kfid:${ext}`, kfid);
     await flushHeld(db, ext, kfid);
   }
   const scene = m.event?.scene_param || m.event?.scene;
@@ -263,6 +265,29 @@ async function flushHeld(db: DB, ext: string, openKfId: string) {
   state.set(db, `held:${ext}`, "[]");
   await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, msgtype: "text", text: { content: `📬 I have ${held.length} update${held.length > 1 ? "s" : ""} for you:` } }, db);
   for (const p of held) await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...p }, db);
+}
+
+/** WeChat can only write to a user for 48 h after their last message (and ~5 messages). */
+const WINDOW_MS = 47 * 3600_000;
+
+/**
+ * Tell the user about something that happened without them writing (a supplier confirmed through a link, an email
+ * arrived). Inside WeChat's window it goes out now; otherwise it waits and is delivered with "I have N updates"
+ * on their next message. The web app shows it either way.
+ */
+export async function notifyUser(db: DB, userId: string, replies: OutgoingReply[]): Promise<"sent" | "held" | "off"> {
+  if (!wecomConfigured() || !replies.length) return "off";
+  const ext = (db.prepare(`SELECT wecom_external_userid AS e FROM users WHERE id = ?`).get(userId) as { e: string | null } | undefined)?.e;
+  if (!ext) return "off";
+  const kfid = state.get(db, `kfid:${ext}`) ?? process.env.WECOM_OPEN_KFID ?? "";
+  const lastIn = state.get(db, `last_in:${ext}`);
+  if (!kfid || !lastIn || Date.now() - +new Date(lastIn) > WINDOW_MS) {
+    const held = JSON.parse(state.get(db, `held:${ext}`) ?? "[]");
+    state.set(db, `held:${ext}`, JSON.stringify([...held, ...replies.flatMap(toWecomPayloads)]));
+    return "held";
+  }
+  await send(db, ext, kfid, replies);
+  return "sent";
 }
 
 /** Contact link for the QR code (§6.3, §13.3 step 8). */

@@ -1,4 +1,9 @@
-import { appDb, CURRENT_WS, workspaceProfile } from "@/lib/server";
+import { appDb, CURRENT_USER, CURRENT_WS, workspaceProfile } from "@/lib/server";
+import { userToken } from "@/lib/core/tokens";
+import { calendarFeedUrl, calendarPageUrl, webcalUrl } from "@/lib/core/calendar";
+import { CalendarCard } from "@/components/CalendarCard";
+import { EmailCard } from "@/components/EmailCard";
+import { inboundAddress } from "@/lib/channels/email";
 import { provider, modelFor } from "@/lib/adapters/llm";
 import { wecomConfigured } from "@/lib/channels/wecom";
 import { PROFILES } from "@/lib/core/domain";
@@ -16,6 +21,7 @@ export default async function SettingsPage() {
   const profile = workspaceProfile(db);
   const spend = db.prepare(`SELECT step, model, source, COUNT(*) AS n, SUM(est_cost_usd) AS usd, AVG(ms) AS ms FROM llm_calls GROUP BY step, model, source ORDER BY usd DESC`).all() as { step: string; model: string; source: string; n: number; usd: number; ms: number }[];
   const total = spend.reduce((s, r) => s + (r.usd ?? 0), 0);
+  const cal = userToken(db, CURRENT_USER, "calendar");
   const steps = ["intent", "translate", "extract", "analyze", "draft", "assistant", "asr"] as const;
 
   return (
@@ -35,6 +41,12 @@ export default async function SettingsPage() {
           </span>
           <Icon name="arrow" className="size-4 text-muted" />
         </Link>
+      </Section>
+      <Section title="Calendar">
+        <CalendarCard initial={{ feed: calendarFeedUrl(cal), webcal: webcalUrl(cal), page: calendarPageUrl(cal) }} />
+      </Section>
+      <Section title="Email">
+        <EmailCard initial={inboundAddress(db, CURRENT_USER)} />
       </Section>
       <Section title="AI models">
         <Card className="p-5 text-[14px]">

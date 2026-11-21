@@ -13,13 +13,18 @@ import { runAudit } from "@/lib/core/audit";
 import { indexText } from "@/lib/core/memory";
 import type { FactKey, ProfileKey } from "@/lib/core/domain";
 
-const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls", "outreach_recipients", "outreach_campaigns"];
+const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls", "outreach_recipients", "outreach_campaigns", "share_links", "confirmations"];
 const ws = DEMO_WORKSPACE;
 const daysAgo = (n: number, hour = 9) => `${addDays(today(), -n)}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 
 export async function resetDemo(db: DB, opts: { empty?: boolean; profile?: ProfileKey } = {}) {
   const profile = opts.profile ?? ((db.prepare(`SELECT profile FROM workspaces WHERE id = ?`).get(ws) as { profile: ProfileKey } | undefined)?.profile ?? "china_business");
-  db.transaction(() => { for (const t of DATA_TABLES) db.prepare(`DELETE FROM ${t}`).run(); })();
+  db.transaction(() => {
+    // confirmations are append-only; only a demo reset may clear them (see the trigger in lib/db.ts)
+    db.prepare(`INSERT OR REPLACE INTO wecom_state (k, v) VALUES ('allow_reset', 'yes')`).run();
+    for (const t of DATA_TABLES) db.prepare(`DELETE FROM ${t}`).run();
+    db.prepare(`DELETE FROM wecom_state WHERE k = 'allow_reset'`).run();
+  })();
   db.prepare(`UPDATE workspaces SET profile = ? WHERE id = ?`).run(profile, ws);
   if (opts.empty) return null;
 

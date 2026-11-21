@@ -13,16 +13,19 @@ import { runAudit, openAlerts, type AlertRow } from "./audit";
 import { classifyIntent, commandOf } from "./intent";
 import { documentClues, documentFacts, documentPerson, extractDocument, extractText, quickTranslate, textFacts } from "./extract";
 import { createEntity, entityLabel, getEntity, kindForRole, learnAliases, listEntities, ownNames, resolveEntity, type Clue } from "./entities";
-import { createMatter, getMatter, pickMatter, touchMatter, matterChecklist, type MatterRow } from "./matters";
+import { createMatter, getMatter, listMatters, pickMatter, touchMatter, matterChecklist, type MatterRow } from "./matters";
 import { addTask, deriveDocumentTasks, deriveFactTasks, ensureRecurring, listTasks } from "./tasks";
-import { analysisButtons, canReplyTo, consistentTerms, detailsLine, draftReply, formatAlerts, formatTranslation, type OutgoingReply } from "./reply";
+import { analysisButtons, canReplyTo, chineseDraftIn, COPY_LABEL, consistentTerms, detailsLine, draftReply, formatAlerts, formatTranslation, type OutgoingReply } from "./reply";
 import { indexText, reindexScope, entityProfile } from "./memory";
 import { ask } from "./assistant";
-import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type EntityKind, type MatterKind } from "./domain";
+import { userToken } from "./tokens";
+import { createConfirmLink, missingDocs, termChoices } from "./confirm";
+import { calendarPageUrl } from "./calendar";
+import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
 import { isChinese, nameSimilarity } from "./normalize";
 import type { DocumentExtraction, TextExtraction } from "./schemas";
 
-export type Channel = "wecom" | "web_upload" | "web_chat" | "sim";
+export type Channel = "wecom" | "web_upload" | "web_chat" | "sim" | "supplier_link" | "email";
 export type IncomingItem = {
   kind: "text" | "voice" | "image" | "file" | "merged" | "event";
   text?: string;
@@ -34,6 +37,7 @@ export type IncomingItem = {
   receivedAt?: string;
   event?: string;
   transcriptHint?: string; // simulator: transcript used for a voice item without ASR
+  fromMe?: boolean; // written by the user (an email they BCC'd to Memini): its terms are what YOU said
 };
 export type { OutgoingReply } from "./reply";
 
@@ -56,7 +60,7 @@ type MsgRow = {
 };
 type Extracted =
   | { type: "document"; document_id: string; data: DocumentExtraction; chat_title?: string }
-  | { type: "text"; data: TextExtraction; said_by: "counterparty" | "user_report"; chat_title?: string };
+  | { type: "text"; data: TextExtraction; said_by: "counterparty" | "user_report" | "me"; chat_title?: string };
 type PendingRow = { id: string; user_id: string; message_ids: string; candidate_ids: string; clues_json: string; awaiting: string; menu_sent_at: string; status: string };
 type PendingState = {
   clues: Clue[]; newName?: string | null; newKind?: EntityKind | null; conflict?: string | null;
@@ -86,9 +90,30 @@ const profileKey = (db: DB, ws: string) => (db.prepare(`SELECT profile FROM work
 type IncomingInput = { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress; entityId?: string; matterId?: string };
 
 export async function handleIncoming(input: IncomingInput, db: DB = getDb()): Promise<OutgoingReply[]> {
-  if (!input.progress) return handleIncomingInner(input, db);
-  const ctx: ProgressCtx = { ...input.progress, shownTr: new Set(), shownDoc: new Set(), pending: [] };
-  return progressStore.run(ctx, () => handleIncomingInner(input, db));
+  let replies: OutgoingReply[];
+  if (!input.progress) replies = await handleIncomingInner(input, db);
+  else {
+    const ctx: ProgressCtx = { ...input.progress, shownTr: new Set(), shownDoc: new Set(), pending: [] };
+    replies = await progressStore.run(ctx, () => handleIncomingInner(input, db));
+  }
+  return withCopyButtons(db, input.userId, input.channel, replies);
+}
+
+/** Every reply that carries a Chinese draft gets a "📋 Chinese only" button: the tap answers with a bubble holding
+ *  just the Chinese, ready to forward. The draft is kept as an outgoing message so the tap works later too. */
+function withCopyButtons(db: DB, userId: string, channel: Channel, replies: OutgoingReply[]): OutgoingReply[] {
+  return replies.map((r) => {
+    // a reply that IS the clean text (the bubble itself) needs no button: on WeChat it is forwarded as it is
+    if (!r.copy?.text || r.copy.text === r.text || r.buttons?.some((b) => b.id.startsWith("zh:"))) return r;
+    const id = newId("out");
+    const ws = wsOf(db, userId);
+    db.prepare(`INSERT INTO messages (id, workspace_id, user_id, channel, direction, kind, intent, text_original, status, received_at) VALUES (?,?,?,?,'out','draft','draft',?,'skipped',?)`)
+      .run(id, ws, userId, channel, r.copy.text, nowIso());
+    const button = { id: `zh:${id}`, label: COPY_LABEL };
+    return r.kind === "menu"
+      ? { ...r, buttons: [button, ...(r.buttons ?? [])] }
+      : { ...r, kind: "menu", buttons: [button], prompt: "Tap to get the Chinese alone, ready to forward:" };
+  });
 }
 
 async function handleIncomingInner(input: IncomingInput, db: DB): Promise<OutgoingReply[]> {
@@ -120,11 +145,12 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
 
   const msgs = await storeMessages(db, ws, input, items);
   const text = msgs.map((m) => m.text_original ?? "").join("\n");
-  const intent = await classifyIntent(text, msgs.map((m) => m.kind));
+  // a counterparty answering through their own link, or a forwarded email: always content, never a question for the assistant
+  const intent = input.entityId || input.channel === "email" ? { intent: "content" as const, confidence: 1, via: "rule" as const } : await classifyIntent(text, msgs.map((m) => m.kind));
   if (intent.intent === "question" && intent.confidence >= 0.7) {
     setStatus(db, msgs, "question", "skipped");
     await ack(THINKING);
-    return [{ kind: "text", text: (await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text }];
+    return [answerReply((await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text)];
   }
   if (intent.intent === "content") {
     setStatus(db, msgs, "content", "pending");
@@ -135,6 +161,12 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
     .run(newId("pg"), input.userId, JSON.stringify(msgs.map((m) => m.id)), "[]", "{}", "intent_choice", nowIso());
   return [{ kind: "menu", text: "Is this from someone you deal with, or a question for me?", buttons: [{ id: "int:content", label: "📥 Forwarded content" }, { id: "int:question", label: "❓ My question" }] }];
+}
+
+/** An assistant answer; a Chinese draft inside it ("write a polite follow-up…") becomes copy-ready. */
+function answerReply(text: string): OutgoingReply {
+  const zh = chineseDraftIn(text);
+  return { kind: "text", text, ...(zh ? { copy: { label: COPY_LABEL, text: zh } } : {}) };
 }
 
 function logRaw(db: DB, ws: string, input: { userId: string; channel: Channel }, items: IncomingItem[], intent: string) {
@@ -152,7 +184,7 @@ async function storeMessages(db: DB, ws: string, input: { userId: string; channe
     const row: MsgRow = {
       id: newId("msg"), workspace_id: ws, user_id: input.userId, channel: input.channel, group_id: group, kind: it.kind, intent: null, original_author: it.originalAuthor ?? null,
       text_original: text, text_translated: null, file_path: it.filePath ?? null, entity_id: null, matter_id: null, status: "pending",
-      received_at: it.receivedAt ?? nowIso(), extracted_json: it.chatTitle ? JSON.stringify({ chat_title: it.chatTitle }) : null,
+      received_at: it.receivedAt ?? nowIso(), extracted_json: it.chatTitle || it.fromMe ? JSON.stringify({ chat_title: it.chatTitle, from_me: it.fromMe || undefined }) : null,
     };
     db.prepare(`INSERT INTO messages (id, workspace_id, user_id, channel, external_msgid, group_id, direction, kind, original_author, text_original, file_path, status, received_at, extracted_json) VALUES (?,?,?,?,?,?,'in',?,?,?,?,?,?,?)`)
       .run(row.id, ws, input.userId, row.channel, it.externalMsgId ?? null, group, row.kind, row.original_author, row.text_original, row.file_path, row.status, row.received_at, row.extracted_json);
@@ -202,7 +234,7 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
       x = { type: "document", document_id: docId, data, chat_title: meta.chat_title };
     } else {
       const { data } = await extractText(m.text_original ?? "", m.received_at);
-      x = { type: "text", data, said_by: m.kind === "voice" ? "user_report" : "counterparty", chat_title: meta.chat_title }; // your own voice note is a report (§6.4)
+      x = { type: "text", data, said_by: meta.from_me ? "me" : m.kind === "voice" ? "user_report" : "counterparty", chat_title: meta.chat_title }; // your own voice note is a report (§6.4)
       db.prepare(`UPDATE messages SET text_translated = ? WHERE id = ?`).run(data.translation, m.id);
       indexText(db, { type: "message", id: m.id, workspaceId: ws }, `${m.text_original ?? ""}\n${data.translation}`);
     }
@@ -213,8 +245,12 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
   if (ctx) await Promise.all(ctx.pending); // keep the order: the translation goes out before anything below
 
   if (known?.entityId && getEntity(db, known.entityId)) {
+    // the sender is certain (their own link), but a document may be about someone else (a middleman's license):
+    // learn its identifiers only if they point to nobody else
     const clues = msgs.flatMap((m) => cluesOf(m, extractedOf(m)!));
-    return assign(db, ws, userId, msgs, known.entityId, clues, "document", undefined, known.matterId);
+    const r = resolveEntity(db, { workspaceId: ws, clues: clues.filter((c) => c.strong) });
+    const safe = !r.certainId || r.certainId === known.entityId ? clues : [];
+    return assign(db, ws, userId, msgs, known.entityId, safe, "document", undefined, known.matterId);
   }
 
   // 2. your own documents (passport, permit…) go to you — identified by name/ID number, not guessed
@@ -482,7 +518,11 @@ async function analysisReply(db: DB, ws: string, entityId: string, matterIds: st
   if (missingLicense) parts.push(`⚠️ ${e.label} hasn't sent a business license yet.`);
   if (canReplyTo(e.kind) && d.reply_zh) parts.push(`💬 Suggested reply (copy and send):\n${d.reply_zh}`);
   parts.push(detailsLine(matters.length === 1 ? "m" : "e", matters.length === 1 ? matters[0].id : entityId));
-  return { kind: "menu", text: parts.join("\n\n"), prompt: "Anything to fix?", buttons: analysisButtons(asgId) };
+  const linkable = canReplyTo(e.kind) && matters.some((m) => termChoices(db, m.id).length || missingDocs(db, m).length);
+  return {
+    kind: "menu", text: parts.join("\n\n"), prompt: "Anything to fix?", buttons: analysisButtons(asgId, { link: linkable }),
+    ...(canReplyTo(e.kind) && d.reply_zh ? { copy: { label: COPY_LABEL, text: d.reply_zh } } : {}),
+  };
 }
 
 async function resolvePendingWithEntity(db: DB, ws: string, pend: PendingRow, entityId: string, prefix?: string, matterId?: string): Promise<OutgoingReply[]> {
@@ -578,11 +618,30 @@ async function handleMenu(db: DB, ws: string, userId: string, menuId: string): P
 
   if (prefix === "agr") return markAgreed(db, ws, arg);
 
+  if (prefix === "zh") {
+    // the clean Chinese bubble: nothing but the text to forward
+    const d = db.prepare(`SELECT text_original FROM messages WHERE id = ? AND workspace_id = ? AND direction = 'out'`).get(arg, ws) as { text_original: string } | undefined;
+    return d ? [{ kind: "text", text: d.text_original, copy: { label: COPY_LABEL, text: d.text_original } }] : [{ kind: "text", text: "I can't find that reply any more." }];
+  }
+
+  if (prefix === "lnk") {
+    // lnk:<assignment id> (from an analysis) or lnk:m:<matter id> (from the /link menu)
+    let matterId: string | undefined;
+    if (arg.startsWith("m:")) matterId = arg.slice(2);
+    else {
+      const asg = db.prepare(`SELECT clues_json FROM pending_groups WHERE id = ? AND awaiting = 'assignment'`).get(arg) as { clues_json: string } | undefined;
+      matterId = asg ? (JSON.parse(asg.clues_json).matterIds as string[] | undefined)?.find((id) => { const m = getMatter(db, id); return m && canReplyTo(m.entity_id ? getEntity(db, m.entity_id)?.kind : null); }) : undefined;
+    }
+    const m = matterId ? getMatter(db, matterId) : undefined;
+    if (!m || m.workspace_id !== ws) return [{ kind: "text", text: "I can't find that matter any more." }];
+    return confirmLinkReplies(db, userId, m.id);
+  }
+
   if (prefix === "int") {
     if (!pend || pend.awaiting !== "intent_choice") return [{ kind: "text", text: "That question has already been answered." }];
     db.prepare(`UPDATE pending_groups SET status = 'resolved' WHERE id = ?`).run(pend.id);
     const msgs = loadMsgs(db, JSON.parse(pend.message_ids));
-    if (arg === "question") { setStatus(db, msgs, "question", "skipped"); return [{ kind: "text", text: (await ask(db, ws, msgs.map((m) => m.text_original).join("\n"))).text }]; }
+    if (arg === "question") { setStatus(db, msgs, "question", "skipped"); return [answerReply((await ask(db, ws, msgs.map((m) => m.text_original).join("\n"))).text)]; }
     setStatus(db, msgs, "content", "pending");
     return processContent(db, ws, userId, msgs);
   }
@@ -631,13 +690,41 @@ async function handleCommand(db: DB, ws: string, userId: string, cmd: string, ra
     if (pending) lines.push(`📥 ${pending} item${pending > 1 ? "s" : ""} waiting to be filed (web app → Inbox).`);
     return [{ kind: "text", text: lines.length ? lines.join("\n") : "Nothing due in the coming days." }];
   }
+  if (cmd === "/link" || cmd === "/confirm") {
+    const options = listMatters(db, ws, { status: ["open", "waiting"] }).filter((m) => m.entity_id && canReplyTo(getEntity(db, m.entity_id)?.kind) && (termChoices(db, m.id).length || missingDocs(db, m).length));
+    if (!options.length) return [{ kind: "text", text: "No open matter with terms or missing documents to send yet. Forward a quote or a proforma first." }];
+    if (options.length === 1) return confirmLinkReplies(db, userId, options[0].id);
+    return [{ kind: "menu", text: "Which one should they confirm?", buttons: options.slice(0, 5).map((m) => ({ id: `lnk:m:${m.id}`, label: `${MATTER_KINDS[m.kind].icon} ${m.title}${m.entity_id ? ` – ${getEntity(db, m.entity_id)?.display_name ?? ""}` : ""}` })) }];
+  }
+  if (cmd === "/calendar" || cmd === "/cal") {
+    const page = calendarPageUrl(userToken(db, userId, "calendar"));
+    return [{ kind: "text", text: `📅 All your deadlines in your iPhone Calendar, with reminders — no 48-hour limit like WeChat:\n${page}\n\nOpen the link, tap ··· (top right) → Open in Safari, then tap "Add to Calendar".` }];
+  }
   const sellerN = raw.match(/^\/seller\s*(\d+)/i);
   if (sellerN) return [{ kind: "text", text: (await ask(db, ws, `What are the current terms and open issues of Seller ${sellerN[1]}?`)).text }];
   if (cmd === "agreed") {
     const last = db.prepare(`SELECT id FROM pending_groups WHERE user_id = ? AND awaiting = 'assignment' ORDER BY menu_sent_at DESC LIMIT 1`).get(userId) as { id: string } | undefined;
     return last ? markAgreed(db, ws, last.id) : [{ kind: "text", text: "Nothing to mark as agreed yet." }];
   }
-  return [{ kind: "text", text: "Commands: /today · /deadlines · /alerts · /contacts · /suppliers · /seller1 · agreed" }];
+  return [{ kind: "text", text: "Commands: /today · /deadlines · /calendar · /link · /alerts · /contacts · /suppliers · /seller1 · agreed" }];
+}
+
+/** Create a confirmation link and answer with (1) what's on it and (2) the Chinese message to forward, alone. */
+function confirmLinkReplies(db: DB, userId: string, matterId: string): OutgoingReply[] {
+  try {
+    const r = createConfirmLink(db, { userId, matterId });
+    const m = getMatter(db, matterId)!;
+    const docs = (JSON.parse(r.link.docs_json) as DocType[]).map((d) => DOC_TYPES[d].label);
+    const lines = [
+      `🔗 Confirmation page for ${r.snapshot.counterparty || "them"} · ${m.title}`,
+      r.snapshot.terms.length ? `They'll confirm:\n${r.snapshot.terms.map((t) => `• ${t.en}: ${t.value_en}`).join("\n")}` : "",
+      docs.length ? `They can upload: ${docs.join(", ")}` : "",
+      `Valid until ${fmtDay(r.link.expires_at.slice(0, 10))}. I'll tell you when they answer.\n👇 Send them the next message on WeChat (long-press → Forward, or Copy).`,
+    ].filter(Boolean);
+    return [{ kind: "text", text: lines.join("\n\n") }, { kind: "text", text: r.message_zh, copy: { label: COPY_LABEL, text: r.message_zh } }];
+  } catch (e) {
+    return [{ kind: "text", text: e instanceof Error ? e.message : "Couldn't create the link." }];
+  }
 }
 
 function welcome(profile: string): OutgoingReply {

@@ -1,4 +1,5 @@
 "use client";
+import { isPublicPath } from "@/lib/publicPaths";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -17,7 +18,7 @@ export function Sidebar({ counts }: { counts: NavCounts }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
-  if (path.startsWith("/s/") || path.startsWith("/rfq/")) return null; // mobile pages opened from WeChat have no app chrome
+  if (isPublicPath(path)) return null; // mobile pages opened from WeChat have no app chrome
 
   const main: Item[] = [
     { href: "/", label: "Home", icon: "home", badge: counts.alerts || undefined, tone: "bad" },

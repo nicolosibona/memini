@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { Mark } from "./Sidebar";
+import { ChineseCard, withoutDraft } from "./ReplyBubble";
 import type { OutgoingReply } from "@/lib/core/reply";
 
 type Turn =
@@ -40,12 +41,17 @@ function BotTurn({ turn, busy, onButton }: { turn: Extract<Turn, { role: "bot" }
     <div className="flex gap-3.5 rise">
       <div className="pt-0.5 shrink-0"><Mark size="sm" /></div>
       <div className="min-w-0 flex-1 space-y-3">
-        {turn.replies.map((r, i) => (
+        {turn.replies.map((r, i) => {
+          const zh = r.copy?.text;
+          const text = zh ? withoutDraft(r.text, zh) : r.text;
+          const buttons = r.buttons?.filter((b) => !b.id.startsWith("zh:")); // the card below has its own Copy
+          return (
           <div key={i}>
-            <div className="text-[15.5px] leading-[1.7] text-ink whitespace-pre-wrap break-words"><Linkified text={r.text} /></div>
-            {r.buttons?.length ? (
+            {text && <div className="text-[15.5px] leading-[1.7] text-ink whitespace-pre-wrap break-words"><Linkified text={text} /></div>}
+            {zh && <ChineseCard text={zh} className={text ? "mt-3" : ""} />}
+            {buttons?.length ? (
               <div className="flex flex-wrap gap-2 mt-3">
-                {r.buttons.map((b) => (
+                {buttons.map((b) => (
                   <button key={b.id} disabled={busy} onClick={() => onButton(b.id, b.label)}
                     className="press rounded-full border border-line bg-card px-3.5 h-9 text-[13.5px] text-ink hover:border-ink/30 hover:bg-hover disabled:opacity-50">
                     {b.label}
@@ -54,7 +60,8 @@ function BotTurn({ turn, busy, onButton }: { turn: Extract<Turn, { role: "bot" }
               </div>
             ) : null}
           </div>
-        ))}
+          );
+        })}
         {!turn.replies.length && <div className="text-[15px] text-muted">Got it.</div>}
         {turn.ms != null && <div className="text-[12.5px] text-faint tabular">{(turn.ms / 1000).toFixed(1)} s</div>}
       </div>
@@ -177,7 +184,7 @@ export function HomeChat({ eyebrow, greeting, prompt, suggestions, children }: {
           <Icon name="send" className="size-5" />
         </button>
       </div>
-      <input ref={picker} type="file" multiple hidden accept="image/*,application/pdf,.html,.htm,.txt,audio/*" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+      <input ref={picker} type="file" multiple hidden accept="image/*,application/pdf,.html,.htm,.txt,.eml,message/rfc822,audio/*" onChange={(e) => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
     </div>
   );
 

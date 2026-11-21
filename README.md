@@ -69,6 +69,32 @@ See blueprint §13 for background. Code side is done (`lib/channels/wecom*.ts`, 
 
 Errors you may see: **60020** IP not trusted (step 5) · **95027** account limit (unverified company) · **-50025** callback domain rejected (use the VPS IP) · **42001** token expired (auto-refreshed).
 
+## Phone calendar, supplier links, Chinese bubbles, email
+
+**Live calendar (iPhone).** Deadlines → scan the QR with the iPhone camera → *Add to Calendar* → *Subscribe*. The feed
+(`/api/calendar/<token>.ics`, RFC 5545, all-day events, reminders per kind of deadline) refreshes by itself; WeChat's
+48-hour limit doesn't apply. In WeChat send `/calendar` for the link (open it in Safari). Reset the link in Deadlines or Settings.
+
+**Confirmation link for the counterparty.** Matter page → *Ask them to confirm* (or the 🔗 button under an analysis on
+WeChat, or `/link`). They get a Chinese-first page (`/c/<token>`, no login, made for WeChat's browser): ✅ 确认无误 to
+confirm the terms (stored as an immutable snapshot with its sha256; the terms become *agreed*), ✏️ 有修改 to ask for a
+change (translated and checked like any message), and one-tap uploads for the documents still missing. Everything lands
+in the right contact and matter; you get told on WeChat when your 48-hour window is open, otherwise with your next message.
+Changes after a confirmation raise `TERMS_CHANGED_AFTER_CONFIRMATION`. Links expire after `CONFIRM_LINK_DAYS` (14).
+
+**Copy-ready Chinese.** Every reply with a Chinese draft gets a 📋 button on WeChat that answers with a bubble holding only
+the Chinese (long-press → Forward). The web chat shows it in a green card with a Copy button.
+
+**Email to Memini (free).** Forwarded or BCC'd emails become one group (body + attachments) for the same brain.
+- *No domain* (recommended to start): create a dedicated Gmail, turn on 2-Step Verification, create an **app password**
+  (Google Account → Security → App passwords), then on the server set `IMAP_HOST=imap.gmail.com`, `IMAP_USER`,
+  `IMAP_PASSWORD` (the app password), `EMAIL_INBOUND_ADDRESS` and restart. Settings shows your address
+  `name+<token>@gmail.com`. QQ Mail works the same with `imap.qq.com` and its authorization code (set `EMAIL_PLUS_ADDRESSING=0`
+  and `EMAIL_ALLOWED_SENDERS`).
+- *With a domain on Cloudflare*: Email Routing → catch-all → *Send to a Worker* with `scripts/cloudflare-email-worker.js`,
+  set `EMAIL_INBOUND_DOMAIN`.
+- *No setup at all*: Settings → *Simulate an incoming email*, or drop an `.eml` file in the Home chat.
+
 ## Where things are
 
 | Path | What |

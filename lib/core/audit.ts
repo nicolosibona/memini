@@ -25,7 +25,8 @@ type EntityIn = { id: string; kind: EntityKind; display_name: string; legal_name
 type MatterIn = { id: string; kind: MatterKind; title: string; entity_id: string | null; target_date: string | null; checklist: { label: string; required: boolean; done: boolean }[] };
 type DocIn = { id: string; doc_type: DocType; title: string; entity_id: string | null; matter_id: string | null; expires_at: string | null; extracted: DocumentExtraction | null };
 type TaskIn = { id: number; kind: string; who: string; what: string; due_at: string | null; status: string; entity_id: string | null; matter_id: string | null };
-export type AuditInput = { today: string; facts: FactRow[]; entities: EntityIn[]; matters: MatterIn[]; documents: DocIn[]; tasks: TaskIn[] };
+type ConfirmedIn = { matter_id: string; entity_id: string | null; at: string; changes: { key: FactKey; en: string; was: string; now: string }[] };
+export type AuditInput = { today: string; facts: FactRow[]; entities: EntityIn[]; matters: MatterIn[]; documents: DocIn[]; tasks: TaskIn[]; confirmed?: ConfirmedIn[] };
 
 const conv = (f: FactRow) => isConversationSource(f.source_type) || f.said_by === "user_report";
 const docf = (f: FactRow) => isDocumentSource(f.source_type) && f.source_type !== "registry";
@@ -174,6 +175,17 @@ export function computeAlerts(input: AuditInput): AlertCandidate[] {
       push({ entity_id: m.entity_id, matter_id: m.id, code: "MISSING_DOCUMENT", severity: "amber", title: `${m.title}: still missing ${missing.join(", ")} (deadline ${fmtDay(due.slice(0, 10))}).`, detail: `Checklist for ${MATTER_KINDS[m.kind]?.label ?? m.kind}.`, evidence_fact_ids: [], dedupe_key: `MISSING_DOCUMENT:${m.id}:${missing.join("|")}` });
   }
 
+  // 7. terms the counterparty confirmed through a link that have changed since
+  for (const c of input.confirmed ?? []) {
+    if (!matter.has(c.matter_id)) continue;
+    push({
+      entity_id: c.entity_id, matter_id: c.matter_id, code: "TERMS_CHANGED_AFTER_CONFIRMATION", severity: "amber",
+      title: `Changed after they confirmed on ${fmtDay(c.at.slice(0, 10))}: ${c.changes.map((x) => `${x.en.toLowerCase()} ${x.was} → ${x.now}`).join(" · ")}.`,
+      detail: "Send a new confirmation link so both sides agree on the new terms.", evidence_fact_ids: [],
+      dedupe_key: `CONFIRM_CHANGED:${c.matter_id}:${c.at}:${c.changes.map((x) => `${x.key}=${x.now}`).join("|")}`,
+    });
+  }
+
   // 6. tasks & deadlines
   for (const t of input.tasks) {
     if (t.status !== "open" || !t.due_at) continue;
@@ -192,6 +204,7 @@ export function computeAlerts(input: AuditInput): AlertCandidate[] {
 // ── persistence ──
 export async function loadAuditInput(db: DB, workspaceId: string, now = today()): Promise<AuditInput> {
   const { matterChecklist } = await import("./matters");
+  const { changedSinceConfirmation } = await import("./confirm");
   const ents = db.prepare(`SELECT id, kind, display_name, legal_name_zh, legal_name_en, credit_code FROM entities WHERE workspace_id = ?`).all(workspaceId) as Omit<EntityIn, "registry">[];
   const entities: EntityIn[] = [];
   for (const e of ents) entities.push({ ...e, registry: e.credit_code ? await lookupRegistry({ creditCode: e.credit_code }) : null });
@@ -204,6 +217,7 @@ export async function loadAuditInput(db: DB, workspaceId: string, now = today())
     facts: db.prepare(`SELECT * FROM facts WHERE workspace_id = ? AND status NOT IN ('superseded','rejected')`).all(workspaceId) as FactRow[],
     entities, matters, documents,
     tasks: db.prepare(`SELECT id, kind, who, what, due_at, status, entity_id, matter_id FROM tasks WHERE workspace_id = ?`).all(workspaceId) as TaskIn[],
+    confirmed: changedSinceConfirmation(db, workspaceId),
   };
 }
 
