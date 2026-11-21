@@ -81,6 +81,20 @@ CREATE TABLE IF NOT EXISTS llm_calls (
   id INTEGER PRIMARY KEY, step TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
   est_cost_usd REAL, ms INTEGER, source TEXT, created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS outreach_campaigns (
+  id TEXT PRIMARY KEY, workspace_id TEXT, matter_id TEXT,
+  target_price REAL, currency TEXT, target_quantity INTEGER,
+  preferred_incoterm TEXT, max_lead_time_days INTEGER, deadline TEXT,
+  created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS outreach_recipients (
+  id TEXT PRIMARY KEY, campaign_id TEXT, contact_id TEXT, token TEXT UNIQUE,
+  status TEXT, chinese_message TEXT, filter_reason TEXT, quote_document_id TEXT,
+  supplier_matter_id TEXT, submitted_quote_json TEXT, responded_at TEXT,
+  created_at TEXT, updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_outreach_campaign ON outreach_recipients(campaign_id);
+CREATE INDEX IF NOT EXISTS ix_outreach_token ON outreach_recipients(token);
 `;
 
 export function openDb(file: string): DB {

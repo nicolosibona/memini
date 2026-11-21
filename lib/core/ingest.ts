@@ -81,13 +81,17 @@ const wsOf = (db: DB, userId: string) => {
 };
 const profileKey = (db: DB, ws: string) => (db.prepare(`SELECT profile FROM workspaces WHERE id = ?`).get(ws) as { profile: string } | undefined)?.profile ?? "china_business";
 
-export async function handleIncoming(input: { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress }, db: DB = getDb()): Promise<OutgoingReply[]> {
+/** `entityId` / `matterId`: the sender is already known for certain (a supplier answering through their own link),
+ *  so "Who is this from?" is skipped. The content is still extracted and audited like any other forward. */
+type IncomingInput = { userId: string; channel: Channel; items: IncomingItem[]; progress?: Progress; entityId?: string; matterId?: string };
+
+export async function handleIncoming(input: IncomingInput, db: DB = getDb()): Promise<OutgoingReply[]> {
   if (!input.progress) return handleIncomingInner(input, db);
   const ctx: ProgressCtx = { ...input.progress, shownTr: new Set(), shownDoc: new Set(), pending: [] };
   return progressStore.run(ctx, () => handleIncomingInner(input, db));
 }
 
-async function handleIncomingInner(input: { userId: string; channel: Channel; items: IncomingItem[] }, db: DB): Promise<OutgoingReply[]> {
+async function handleIncomingInner(input: IncomingInput, db: DB): Promise<OutgoingReply[]> {
   const ws = wsOf(db, input.userId);
   const items = input.items.filter((it) => !it.externalMsgId || !db.prepare(`SELECT 1 FROM messages WHERE external_msgid = ?`).get(it.externalMsgId)); // WeCom retries
   if (!items.length) return [];
@@ -125,7 +129,7 @@ async function handleIncomingInner(input: { userId: string; channel: Channel; it
   if (intent.intent === "content") {
     setStatus(db, msgs, "content", "pending");
     await ack(THINKING);
-    return processContent(db, ws, input.userId, msgs);
+    return processContent(db, ws, input.userId, msgs, { entityId: input.entityId, matterId: input.matterId });
   }
   // unsure (D7 default: ask)
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
@@ -171,7 +175,7 @@ function cluesOf(m: MsgRow, x: Extracted): Clue[] {
   return clues;
 }
 
-async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]): Promise<OutgoingReply[]> {
+async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[], known?: { entityId?: string; matterId?: string }): Promise<OutgoingReply[]> {
   // 0. chat channels: one fast translation of all the Chinese text, sent as soon as it's ready (the full reading takes longer)
   const ctx = px();
   let extracted = false;
@@ -207,6 +211,11 @@ async function processContent(db: DB, ws: string, userId: string, msgs: MsgRow[]
   }));
   extracted = true;
   if (ctx) await Promise.all(ctx.pending); // keep the order: the translation goes out before anything below
+
+  if (known?.entityId && getEntity(db, known.entityId)) {
+    const clues = msgs.flatMap((m) => cluesOf(m, extractedOf(m)!));
+    return assign(db, ws, userId, msgs, known.entityId, clues, "document", undefined, known.matterId);
+  }
 
   // 2. your own documents (passport, permit…) go to you — identified by name/ID number, not guessed
   const own = ownNames(db, ws);

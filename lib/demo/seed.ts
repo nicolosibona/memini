@@ -13,7 +13,7 @@ import { runAudit } from "@/lib/core/audit";
 import { indexText } from "@/lib/core/memory";
 import type { FactKey, ProfileKey } from "@/lib/core/domain";
 
-const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls"];
+const DATA_TABLES = ["entities", "entity_aliases", "contacts", "matters", "messages", "documents", "facts", "tasks", "alerts", "pending_groups", "search_index", "llm_calls", "outreach_recipients", "outreach_campaigns"];
 const ws = DEMO_WORKSPACE;
 const daysAgo = (n: number, hour = 9) => `${addDays(today(), -n)}T${String(hour).padStart(2, "0")}:00:00.000Z`;
 

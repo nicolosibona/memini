@@ -18,7 +18,9 @@ export function pulse(db: DB, ws: string): { v: string; latest: PulseEvent | nul
        (SELECT COUNT(*) || ':' || IFNULL(MAX(updated_at), '') FROM matters WHERE workspace_id = @ws) AS mt,
        (SELECT COUNT(*) || ':' || IFNULL(MAX(last_activity_at), '') FROM entities WHERE workspace_id = @ws) AS e,
        (SELECT profile || own_names FROM workspaces WHERE id = @ws) AS w,
-       (SELECT COUNT(*) FROM users WHERE wecom_external_userid IS NOT NULL) AS u`,
+       (SELECT COUNT(*) FROM users WHERE wecom_external_userid IS NOT NULL) AS u,
+       (SELECT COUNT(*) || ':' || IFNULL(MAX(updated_at), '') FROM outreach_campaigns WHERE workspace_id = @ws) AS oc,
+       (SELECT COUNT(*) || ':' || IFNULL(MAX(updated_at), '') || ':' || IFNULL(GROUP_CONCAT(status), '') FROM outreach_recipients WHERE campaign_id IN (SELECT id FROM outreach_campaigns WHERE workspace_id = @ws)) AS orp`,
   ).get({ ws }) as Record<string, string | number>;
   const v = crypto.createHash("sha1").update(Object.values(row).join("|")).digest("hex").slice(0, 16);
   const last = db.prepare(
