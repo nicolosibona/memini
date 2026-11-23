@@ -199,4 +199,4 @@ technical file** per product, kept up to date from what suppliers send.
 
 ## Team
 
-Built in a few days at a hackathon in November 2026 by **Nicolò Sibona**, **Alessandro Giostra** and **Uros Bikic**.
+Built in a few days at a hackathon in November 2026 by **Nicolò Sibona**, **Alessandro Giostra**, **Uros Bikic** and **Marco Maiorino**.
