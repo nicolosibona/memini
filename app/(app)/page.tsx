@@ -91,7 +91,7 @@ export default async function TodayPage() {
           {electronics && (
             <>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-card/70 px-2.5 h-6 text-[12px] text-ink-2">
-                <span className="size-1.5 rounded-full bg-brand" />Spec-tuned engineering model · EN ⇄ 中文
+                <span className="size-1.5 rounded-full bg-brand" />Electronics spec check · EN ⇄ 中文
               </span>
               <span className="text-faint">·</span>
             </>
@@ -115,9 +115,9 @@ export default async function TodayPage() {
               </div>
               <ol className="mt-6 grid gap-4 sm:grid-cols-3">
                 {[
-                  ["01", "Translate without slips", "Our model is trained on engineering datasheets. Every number, unit, tolerance and temperature rating is kept exact: μF, V, ℃, ±%."],
-                  ["02", "Check and negotiate", "Each parameter is compared with your spec and every swap is flagged. Price, MOQ and lead time are negotiated in Chinese for you."],
-                  ["03", "Supplier confirms on WeChat", "The bot sends the supplier a spreadsheet in English or your language and in Chinese, side by side. They confirm it line by line."],
+                  ["01", "Translate without slips", "Every line goes through a locked EN ⇄ 中文 glossary, then code checks that each number, unit, limit and temperature rating survived: μF, V, ℃, ±%."],
+                  ["02", "Checked by rules, not by the AI", "Each parameter is compared with your spec by fixed rules, never by the AI, and every swapped part is flagged. Same data in, same verdict out."],
+                  ["03", "Supplier confirms on WeChat", "The bot gives you a bilingual spreadsheet and a Chinese message for the supplier, so they can confirm or correct it line by line."],
                 ].map(([n, t, d]) => (
                   <li key={n} className="rounded-2xl border border-line bg-ivory px-5 py-4">
                     <div className="mono text-[12px] text-brand">{n}</div>

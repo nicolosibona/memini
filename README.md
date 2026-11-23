@@ -1,107 +1,202 @@
-# Memini
+<p align="center">
+  <img src="docs/images/cover.jpg" alt="Memini — deterministic spec checks for electronics sourced from China. AI reads. Rules decide." width="820">
+</p>
 
-Bilingual assistant for foreigners doing business in China — a web app + a WeChat (微信客服) bot sharing one structured memory.
-It started as a sourcing tool (suppliers, quotes, proformas) and is now generic: **contacts, matters, documents, facts, deadlines, checks**,
-scoped by a workspace **profile** ("Sourcing buyer" or "Doing business in China").
+<p align="center">
+  <b>A WeChat assistant that checks a Chinese supplier's specs against yours,<br>and tells both of you exactly what doesn't match.</b>
+</p>
 
-See the [product blueprint](memini_blueprint.md) and [roadmap](ROADMAP.md).
+<p align="center">
+  🏆 <b>Hackathon winner</b> · November 2026 &nbsp;·&nbsp;
+  <a href="docs/memini-pitch-deck.pdf">Pitch deck (PDF)</a> &nbsp;·&nbsp;
+  <a href="#run-it-locally">Run it locally</a>
+</p>
 
-## Run it
+---
+
+> [!NOTE]
+> **Status: hackathon project, no longer deployed.** The AI API keys we used during the event have expired and the demo
+> server is offline. Everything still runs locally **without any key**: rule-based readers and saved answers stand in
+> for the AI, and all 129 tests pass offline. To turn on live AI, add your own Anthropic key ([below](#live-ai)).
+
+## The problem
+
+Finding a supplier in China is solved: Alibaba, 1688 and Global Sources do it well. The hard part starts after.
+A small EU company importing electronics gets datasheets, test reports and WeChat messages **in Chinese, with their own
+terms and units**, and has to make sure they match its own specification before it pays a deposit and puts its brand
+(and its CE mark) on the product.
+
+- Electrical appliances are among the most-flagged dangerous products in the EU, and most alerts concern products from China.
+- Many CE failures are **documentation** failures, not hardware ones.
+- General-purpose AI translates well, but it still slips on numbers, limits and units, and in electronics one wrong
+  number means a recall. A CE consultant plus a translation agency costs thousands of euros per product.
+
+## What Memini does
+
+You forward the supplier's messages, datasheets and photos to the **Memini** chat on WeChat, the app where you already
+talk to suppliers. Nothing to install.
+
+<p align="center">
+  <img src="docs/images/wechat-spec-check.jpg" alt="The Memini WeChat bot: a forwarded supplier reply is translated and checked line by line, then the bilingual Excel verification sheet opens on the phone" width="820">
+</p>
+
+1. **Forward** your spec and whatever the supplier sends (chat messages, PDF datasheets, photos).
+2. **Translate**: every technical line, through a locked EN ⇄ 中文 glossary. One term, always the same.
+3. **Check**: every parameter against your spec. 🔴 mismatch · 🟡 to confirm · ⚠️ not stated · ✅ OK. Swapped
+   parts ("我们换成国产的了，参数一样": *we switched to a domestic part, same parameters*) are flagged.
+4. **Reply**: write `excel` and you get a bilingual `.xlsx` verification sheet plus a Chinese message for the
+   supplier, ready to forward. The supplier fills in and confirms each line.
+
+The same memory is in the web app: everything you forward on WeChat shows up there, and the web chat works the same way.
+
+<p align="center">
+  <img src="docs/images/web-spec-check.jpg" alt="The Memini web app: the buyer's requirements checked against the supplier's answer, with a copy-ready Chinese message" width="820">
+</p>
+
+## AI reads. Rules decide.
+
+<p align="center">
+  <img src="docs/images/how-it-works.jpg" alt="Five steps, only two use AI: collect and translate (AI), normalize, check and deliver (rules)" width="820">
+</p>
+
+The AI is only trusted to **read**: classify what was forwarded, translate it and list the values it contains, each
+with the exact quote it came from. Everything that decides is plain, tested code:
+
+| Step | How | Where |
+|---|---|---|
+| Read + translate | One model call per item (PDF, photo or chat), with the locked glossary in the prompt. Without a model: a rule reader (glossary + unit parser) | [`lib/core/spec/extract.ts`](lib/core/spec/extract.ts) |
+| Translation check | Every number, unit, limit sign (≥ ≤ ~ ±) and part number in the original must survive in the translation, or the line is flagged | [`lib/core/spec/quantity.ts`](lib/core/spec/quantity.ts) |
+| Normalize | `150mVp-p`, `0.15 V`, `1000UF`, `16伏`, `-10℃～+50℃` → SI values and ranges | [`lib/core/spec/quantity.ts`](lib/core/spec/quantity.ts) |
+| Compare | 52 parameters, each with a fixed rule: `min`, `max`, `covers` (a range must cover yours), `includes` (sets such as certifications), `eq` | [`lib/core/spec/params.ts`](lib/core/spec/params.ts), [`compare.ts`](lib/core/spec/compare.ts) |
+| EU warnings | Indicative, never a verdict: CE/RoHS stated in a chat is only a claim (ask for the DoC), EU Ecodesign 2019/1782 limits for external power supplies, a part changed after certification | [`lib/core/spec/eu.ts`](lib/core/spec/eu.ts) |
+| Deliver | Bilingual `.xlsx` (ExcelJS) and the Chinese message, both built from the table, not by a model, so the numbers can't drift | [`sheet.ts`](lib/core/spec/sheet.ts), [`flow.ts`](lib/core/spec/flow.ts) |
+
+Same data in, same verdict out.
+
+### The demo case: a 12 V power supply
+
+The demo (`data/demo/spec`, PDFs and images in `public/demo/spec`) is a 60 W power supply, part **PS-1205**: the
+buyer's English requirements, the supplier's Chinese datasheet (规格书), and a WeChat message a day later where the
+supplier quietly swaps the output capacitor:
+
+| Parameter / 参数 | Ours | Supplier | Result |
+|---|---|---|---|
+| Output voltage 输出电压 | 12 V | 12V | ✅ |
+| Ripple & noise 纹波噪声 | ≤ 120 mV | ≤150mV | 🔴 |
+| Efficiency 效率 | ≥ 88 % | 88%（典型值, *typical*） | 🟡 typical only |
+| Operating temperature 工作温度 | −20 … +70 °C | −10℃～+50℃ | 🔴 doesn't cover |
+| Output capacitor, rated voltage 输出电容额定电压 | ≥ 25 V | 16V (was 25V) | 🔴 changed after the datasheet |
+| Certifications 认证 | CE, RoHS | CE、RoHS | ✅ + 🇪🇺 ask for the Declaration of Conformity |
+
+## Run it locally
+
+Requires **Node.js 22**. No API key, no WeChat account needed.
 
 ```bash
-export PATH=~/.local/node/bin:$PATH   # Node 22 lives here on Nicolò's Mac
+git clone https://github.com/nikcccc/memini.git
+cd memini
 npm install
-cp .env.example .env.local            # LLM_PROVIDER=mock works with no key
-npm run dev                           # http://localhost:3000
-npm test                              # 50+ unit + end-to-end tests, no AI needed
-npm run test:live                     # real AI calls vs. golden answers (needs keys, costs a few cents)
+cp .env.example .env.local      # LLM_PROVIDER=mock, MEMINI_PROFILE=electronics
+npm run dev                     # http://localhost:3000
 ```
 
-The app seeds demo data on first run. Switch profile and reload demo data in **Settings**.
+Then, on the **Today** page, paste the buyer's requirements and the supplier's reply into the chat (or drop the PDFs
+from `public/demo/spec`), and write `excel`. For example:
 
-## How it is organized
+```text
+Hi Wang, for PS-1205 we need: ripple ≤ 120 mV, efficiency ≥ 88%, operating temperature -20 to +70 °C, certifications CE and RoHS.
+```
+```text
+您好，没问题。PS-1205纹波≤150mV，效率88%（典型值），工作温度-10℃～+50℃，认证有CE和RoHS。
+```
 
-| Concept | What it is | Where |
-|---|---|---|
-| **Contact** (entity) | Anyone you deal with: supplier, landlord, tax office, accountant, bank — and yourself / your company | `lib/core/entities.ts` |
-| **Matter** | A case such as a product purchase, residence permit renewal, lease, or tax filing. Each kind has a playbook with a document checklist. | `lib/core/matters.ts`, `lib/core/domain.ts` |
-| **Document** | Anything forwarded/uploaded, read by AI into parties + facts + dated tasks | `lib/core/extract.ts` |
-| **Fact** | One value with its source and quote (price, rent, deadline, expiry…). Never overwritten | `lib/core/facts.ts` |
-| **Task** | Every date: their promises, official deadlines, renewals derived from expiry dates, recurring rent | `lib/core/tasks.ts` |
-| **Alert** | Deterministic checks: document vs chat (price, Incoterm, rent…), payee ≠ company, personal accounts, registry, expiring documents, missing paperwork, overdue | `lib/core/audit.ts` |
+**Spec checks** lists every check with its table and sheet. **Settings** switches the workspace profile and resets the demo data.
 
-`lib/core/domain.ts` is the registry: adding a new kind of bureaucracy = a matter kind + its document types + fact keys there; no schema change.
+```bash
+npm test             # 129 unit + end-to-end tests, offline, no AI
+npm run lint
+npm run build
+```
 
-Flow (`lib/core/ingest.ts`, the one entry point for WeChat and the web chat on Home):
-**extract → who is it from?** (certain only from a license/contract/notice identifier, otherwise a menu — never guessed)
-**→ which matter?** (by document type + product/subject; ambiguous → menu) **→ facts + tasks → audit → reply** (alerts, next steps, Chinese draft).
+### Live AI
 
-Suppliers are compared **only within the same product** (`/compare`): two quotes for the 65W charger are comparable, a charger and a cutting board are not.
+Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env.local` (or `gateway` for an Anthropic- or
+OpenAI-compatible gateway, or `qwen` for Alibaba DashScope, which is reachable from mainland China). Each pipeline
+step has its own model (`MODEL_SPEC`, `MODEL_SPEC_CHAT`, `MODEL_ASSISTANT`, …), so changing models is configuration.
 
-## AI (tomorrow: connect the keys)
+`npm run test:live` runs the real model against the demo documents and golden answers, and prints latency and cost per
+step. If a call fails or times out, that step falls back to the rules, so the bot never dead-ends; a rejected key
+(401/403) switches the app to rules for 10 minutes instead of failing every message, and `/api/health` says so.
 
-1. Fill `.env.local`: `LLM_PROVIDER=gateway`, `GATEWAY_BASE_URL`, `GATEWAY_API_KEY`, `GATEWAY_API_STYLE` (`anthropic` if the gateway serves `/v1/messages`, else `openai`).
-   For Claude directly: `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`.
-2. `npm run test:live` — checks the gateway passes structured outputs, images, tool use (§17.11) and that every demo document is read as expected. A fallback counts as a failure there. It prints latency and cost per step.
-3. Try other models per step with `MODEL_INTENT`, `MODEL_EXTRACT`, `MODEL_ANALYZE`, `MODEL_DRAFT`, `MODEL_ASSISTANT` and re-run (§19.7 bake-off).
-4. Without a model (or if a call fails/times out) every step falls back to rules + saved answers for the demo files, so nothing dead-ends.
+### WeChat
 
-## WeChat setup — checklist
+The bot runs on **微信客服 (WeChat Customer Service)** through a WeCom (企业微信) account: users scan a QR code with
+their personal WeChat. Setting up your own account and server takes about an hour: see
+**[docs/wechat-setup.md](docs/wechat-setup.md)**, which also lists what we learned about the WeChat API (the
+5-message send budget, burst grouping, menus, file upload).
 
-See blueprint §13 for background. Code side is done (`lib/channels/wecom*.ts`, `app/api/wecom/callback`); what's left is accounts, a server and verification.
+## Architecture
 
-1. **Register WeCom (企业微信)** with a real-name-verified personal WeChat (may need a +86 number). Note the **CorpID** (My company → Company info).
-2. **Server with a static public IP** (Singapore VPS — Tencent Cloud Lighthouse, Ubuntu 24.04 LTS, 2 vCPU / 8 GB RAM, ports 22/80/443 open in the provider's firewall, SSH key login). Then, from this folder on your laptop:
+```mermaid
+flowchart LR
+  W["WeChat<br/>微信客服"] -->|"encrypted callback"| C["/api/wecom/callback<br/>6 s debounce, send budget"]
+  Web["Web app chat"] --> I
+  E["Email (IMAP)"] --> I
+  C --> I["ingest.ts<br/>one entry point"]
+  I -->|"spec profile"| X["Read + translate<br/>(AI, or rules)"]
+  X --> N["Normalize units<br/>check translation"]
+  N --> R["Compare<br/>52 rules"]
+  R --> D["Reply + bilingual xlsx<br/>+ Chinese message"]
+  I --> DB[("SQLite<br/>one memory")]
+  R --> DB
+  DB --> Web
+```
 
-   ```bash
-   scripts/deploy.sh ubuntu@<server-ip>          # add DOMAIN=your.domain for HTTPS
-   ```
-
-   It copies the code (no GitHub needed), installs Node 22, ffmpeg, pm2 and Caddy, sets the firewall, creates the server's `.env.local` (AI off until you add keys), builds, starts ONE pm2 process behind Caddy on port 80, schedules a daily backup of `storage/`, and checks `/api/health`. Re-run it to deploy updates; after editing `.env.local` on the server run `bash ~/memini/scripts/server-setup.sh`.
-3. **Self-built app**: WeCom admin → App Management → Create app → note **AgentId** and **Secret** → `WECOM_AGENT_ID`, `WECOM_APP_SECRET`.
-4. **Receive messages (API接收)** in the app: URL `http://<VPS-IP>/api/wecom/callback` (or your domain), click *random* for **Token** and **EncodingAESKey** → put them in `.env.local` as `WECOM_CALLBACK_TOKEN`, `WECOM_ENCODING_AES_KEY`, restart the server, then click Save in WeCom. The server answers the GET check (signature + AES decrypt). If it fails: check the server logs and WeCom's online callback tester. [VERIFY §17.1: a bare IP URL is accepted for unverified accounts]
-5. **Trusted IP (企业可信IP)** in the app → add the VPS IP (otherwise API calls fail with 60020).
-6. **微信客服**: WeCom admin → 微信客服 → create an account (name + avatar) → note **open_kfid** → `WECOM_OPEN_KFID`.
-7. 微信客服 → **API** → choose our self-built app as the app that can call the API. From now on, customer messages trigger our callback.
-8. Set `APP_BASE_URL` to the public URL (links sent in WeChat) and a random `LINK_SECRET`. Restart.
-9. In the web app → Settings → **Connect WeChat** shows a QR code; scan it with a personal WeChat → chat opens → send "hi" → you get the welcome. (Fallback: type the 6-digit code shown.)
-10. **Acceptance tests (§17)**, by forwarding real things: a `msgmenu` tap arrives with `menu_id`; max `head_content` length (`WECOM_MENU_HEAD_MAX`); send budget (~5 messages / 48 h, `WECOM_SEND_BUDGET`); merged chat contents (author nicknames, media); PDFs forwarded from personal WeChat arrive as `file`; voice format (AMR/SILK) + ASR quality (`ELEVENLABS_API_KEY`). Note results in the blueprint and adjust the env values.
-
-Errors you may see: **60020** IP not trusted (step 5) · **95027** account limit (unverified company) · **-50025** callback domain rejected (use the VPS IP) · **42001** token expired (auto-refreshed).
-
-## Phone calendar, supplier links, Chinese bubbles, email
-
-**Live calendar (iPhone).** Deadlines → scan the QR with the iPhone camera → *Add to Calendar* → *Subscribe*. The feed
-(`/api/calendar/<token>.ics`, RFC 5545, all-day events, reminders per kind of deadline) refreshes by itself; WeChat's
-48-hour limit doesn't apply. In WeChat send `/calendar` for the link (open it in Safari). Reset the link in Deadlines or Settings.
-
-**Confirmation link for the counterparty.** Matter page → *Ask them to confirm* (or the 🔗 button under an analysis on
-WeChat, or `/link`). They get a Chinese-first page (`/c/<token>`, no login, made for WeChat's browser): ✅ 确认无误 to
-confirm the terms (stored as an immutable snapshot with its sha256; the terms become *agreed*), ✏️ 有修改 to ask for a
-change (translated and checked like any message), and one-tap uploads for the documents still missing. Everything lands
-in the right contact and matter; you get told on WeChat when your 48-hour window is open, otherwise with your next message.
-Changes after a confirmation raise `TERMS_CHANGED_AFTER_CONFIRMATION`. Links expire after `CONFIRM_LINK_DAYS` (14).
-
-**Copy-ready Chinese.** Every reply with a Chinese draft gets a 📋 button on WeChat that answers with a bubble holding only
-the Chinese (long-press → Forward). The web chat shows it in a green card with a Copy button.
-
-**Email to Memini (free).** Forwarded or BCC'd emails become one group (body + attachments) for the same brain.
-- *No domain* (recommended to start): create a dedicated Gmail, turn on 2-Step Verification, create an **app password**
-  (Google Account → Security → App passwords), then on the server set `IMAP_HOST=imap.gmail.com`, `IMAP_USER`,
-  `IMAP_PASSWORD` (the app password), `EMAIL_INBOUND_ADDRESS` and restart. Settings shows your address
-  `name+<token>@gmail.com`. QQ Mail works the same with `imap.qq.com` and its authorization code (set `EMAIL_PLUS_ADDRESSING=0`
-  and `EMAIL_ALLOWED_SENDERS`).
-- *With a domain on Cloudflare*: Email Routing → catch-all → *Send to a Worker* with `scripts/cloudflare-email-worker.js`,
-  set `EMAIL_INBOUND_DOMAIN`.
-- *No setup at all*: Settings → *Simulate an incoming email*, or drop an `.eml` file in the Home chat.
-
-## Where things are
+- **Next.js 15** (App Router) + **React 19** + **Tailwind 4**, TypeScript throughout.
+- **SQLite** (better-sqlite3) with full-text search; schema changes are additive migrations.
+- **Claude** through `@anthropic-ai/sdk`; every model answer is validated with **Zod** schemas.
+- **WeCom** crypto (AES + signature) implemented and unit-tested in [`lib/channels/wecomCrypto.ts`](lib/channels/wecomCrypto.ts).
+- **ExcelJS** for the verification sheet, **pm2 + Caddy** on a single VPS ([`scripts/deploy.sh`](scripts/deploy.sh)).
 
 | Path | What |
 |---|---|
-| `lib/core/` | domain registry, ingest pipeline, entities, matters, facts, tasks, audit, extraction, replies, assistant |
-| `lib/channels/` | WeCom crypto (unit-tested), access_token, `sync_msg`, media download, 6 s debounce, send budget, `msgmenu` |
-| `lib/adapters/` | LLM (mock · gateway · anthropic · qwen; model per step; cost log), ASR, company registry |
-| `app/` | web app (Home chat + memory, To file, Matters, Deadlines, Compare quotes, Contacts, Documents, WeChat bot, Settings) + API routes; pages refresh live via /api/pulse |
-| `data/` | fictional registry with valid credit codes, demo documents with planted traps, golden answers |
-| `tests/` | unit + end-to-end flows (`npm test`), live AI suite (`npm run test:live`) |
+| `lib/core/spec/` | the electronics spec check: reading, glossary, units, rules, EU warnings, the sheet |
+| `lib/core/` | the shared memory and pipeline: ingest, contacts, matters, facts, deadlines, audit, assistant, replies |
+| `lib/channels/` | WeChat (WeCom crypto, `sync_msg`, media, menus, send budget), email (IMAP) |
+| `lib/adapters/` | the only files that know the AI provider (LLM, speech-to-text), plus a company registry |
+| `app/` | the web app (Today, Spec checks, Memory, To file, WeChat, Settings) and the API routes |
+| `data/demo/` | demo documents and a fictional company registry |
+| `tests/` | unit and end-to-end tests (`npm test`), live AI suite (`npm run test:live`) |
+
+## Beyond spec checks
+
+Memini started as a broader "memory" for foreigners doing business in China, and that engine is still in the code,
+behind the `sourcing` and `china_business` workspace profiles (Settings → Profile):
+
+- **Contacts, matters, documents, facts, deadlines.** Anything forwarded is read into who it's from, which case it
+  belongs to (a purchase, a lease, a residence permit, a tax filing), the facts it states with their source quote, and
+  every date. Who sent it is only taken as certain from a license, contract or notice; otherwise the bot asks.
+- **Deterministic audits**: document vs. chat (price, Incoterm, rent…), payee ≠ company, personal bank accounts,
+  expiring documents, missing paperwork.
+- **Supplier confirmation links** (a Chinese-first page where the supplier confirms the terms, stored as an immutable
+  snapshot), **iPhone calendar feed**, **Email to Memini**, copy-ready Chinese replies, and RFQ outreach to several
+  factories at once.
+
+The original design documents are in [`docs/history/`](docs/history/).
+
+## Limitations
+
+- **Single workspace, no login.** The app runs one demo workspace and user; it is not meant to be exposed to
+  untrusted users as is.
+- **EU checks are indicative**, never legal advice: they tell you what to ask the supplier and your test lab.
+- The rule reader (no AI) handles the demo documents and clean chat messages; real-world PDFs and photos need a model.
+- WeChat Customer Service caps how many messages the bot can send per user message; long checks wait for the next message.
+
+## Roadmap
+
+From the pitch: **spec check in WeChat** (built) → **EU Cyber Resilience Act** checks ahead of 2027 → a **living EU
+technical file** per product, kept up to date from what suppliers send.
+
+## Team
+
+Built in a few days at a hackathon in November 2026 by **Nicolò Sibona**, **Alessandro Giostra** and **Uros Bikic**.

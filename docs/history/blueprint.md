@@ -1,5 +1,7 @@
 # Memini — Final Blueprint
 
+> **Historical document.** This is the build blueprint written on 20–21 November 2026, before the team narrowed Memini to electronics spec checks after mentor feedback. Most of the architecture described here (one memory for the web app and the WeChat bot, the ingest pipeline, the WeCom channel) is still what the code does; the product scope is not. For the current product, see the [README](../../README.md).
+
 *Product renamed from ChopCheck to Memini on 2026-11-21 (D1). The scope also widened from sourcing to doing business in China: contacts, matters, documents, deadlines (see README).*
 
 *Version 3 (final, ready to build) — 2026-11-20.*

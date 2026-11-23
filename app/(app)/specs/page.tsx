@@ -22,7 +22,7 @@ export default async function SpecsPage() {
         eyebrow="Electronics"
         title="Spec checks."
         rest="Your spec against what the supplier sends."
-        description="Forward your specification and the supplier's datasheets, test reports and WeChat messages to the bot. Our model, trained on engineering datasheets, translates every technical line with a locked glossary. Every number, unit and limit is verified and each parameter is compared with your spec. The bot then sends the supplier a spreadsheet in English or your language and in Chinese, and they confirm it line by line."
+        description="Forward your specification and the supplier's datasheets, test reports and WeChat messages to the bot. The AI reads and translates every technical line with a locked glossary; code then verifies every number, unit and limit and compares each parameter with your spec. You get a bilingual spreadsheet and a Chinese message for the supplier, who confirms it line by line."
       />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
         <Card>

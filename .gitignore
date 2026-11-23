@@ -48,3 +48,9 @@ model-probe.json
 *.db
 /.next-build/
 /.next-preview/
+
+# local editor / agent settings
+/.claude/
+
+# raw demo recordings (too large for git; see docs/)
+/Demo presentation/
