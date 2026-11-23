@@ -24,6 +24,12 @@ export function isCalendarRequest(text: string): boolean {
   return OWN_EVENT.test(t) && EVENT_NOUN.test(t) && !!parseWhen(t, today()); // "I have a meeting with X on Dec 25"
 }
 
+/** "I have a meeting", "ho una call col fornitore": the user's own plan, even without a date yet (the bot asks for it). */
+export function mentionsOwnEvent(text: string): boolean {
+  const t = text.trim();
+  return !!t && t.length <= 300 && OWN_EVENT.test(t) && EVENT_NOUN.test(t);
+}
+
 // ── dates ──
 const MONTHS: Record<string, number> = {
   jan: 1, january: 1, gennaio: 1, feb: 2, february: 2, febbraio: 2, mar: 3, march: 3, marzo: 3, apr: 4, april: 4, aprile: 4,

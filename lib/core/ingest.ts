@@ -19,12 +19,13 @@ import { analysisButtons, canReplyTo, chineseDraftIn, COPY_LABEL, consistentTerm
 import { indexText, reindexScope, entityProfile } from "./memory";
 import { ask } from "./assistant";
 import { calendarSubscribed, userToken } from "./tokens";
-import { isCalendarRequest, readReminder, saveReminder } from "./reminders";
+import { isCalendarRequest, mentionsOwnEvent, readReminder, saveReminder } from "./reminders";
 import { createConfirmLink, missingDocs, termChoices } from "./confirm";
 import { calendarPageUrl } from "./calendar";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
 import { isChinese, nameSimilarity } from "./normalize";
-import { handleSpecContent, isSheetRequest, sheetFor, specCommand, specMenu, SPEC_WELCOME } from "./spec/flow";
+import { handleSpecContent, isSheetRequest, sheetFor, specCommand, specMenu, SPEC_NOT_TECHNICAL, SPEC_WELCOME } from "./spec/flow";
+import { ruleRead } from "./spec/extract";
 import type { DocumentExtraction, TextExtraction } from "./schemas";
 
 export type Channel = "wecom" | "web_upload" | "web_chat" | "sim" | "supplier_link" | "email";
@@ -155,16 +156,35 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
 
   const msgs = await storeMessages(db, ws, input, items);
   const text = msgs.map((m) => m.text_original ?? "").join("\n");
+  // "grazie", "ok", "ciao", "谢谢": a typed courtesy is never content to file (it used to land in the spec check as
+  // "谢谢", with a Chinese draft for the supplier) nor a question worth a model call
+  const courtesy = textOnly && !input.entityId && input.channel !== "email" && input.channel !== "supplier_link" ? smallTalk(text) : null;
+  if (courtesy) {
+    setStatus(db, msgs, "command", "skipped");
+    return [courtesy === "greeting" ? welcome(profileKey(db, ws)) : courtesyReply(courtesy, electronics)];
+  }
   if (electronics) {
-    // electronics spec check: everything forwarded goes into the open check; only a clear question goes to the assistant
+    // electronics spec check: what the supplier sent goes into the open check; questions go to the assistant and
+    // the user's own plans to the calendar. Rules only (no model call: it cost 4–6 s per message).
     if (textOnly && isSheetRequest(text)) { setStatus(db, msgs, "command", "skipped"); return sheetFor(db, input.userId); }
-    // rules only (no model call: it cost 4–6 s per message); values → it's content, whatever the phrasing
+    // values → it's content, whatever the phrasing
     const technical = /\d\s*(?:k?v|m?a|k?w|mv|%|°c|℃|[µμu]f|mm|k?hz|小时|伏|安)/i.test(text);
+    if (textOnly && !technical && (isCalendarRequest(text) || mentionsOwnEvent(text))) {
+      // "I have a meeting with the supplier on Dec 15": saved to the calendar; without a date, the bot asks for it
+      setStatus(db, msgs, "command", "skipped");
+      return reminderReplies(db, ws, input.userId, text, msgs);
+    }
     const it = textOnly && !technical ? ruleIntent(text) : { intent: "content" as const, confidence: 1 };
     if (it.intent === "question" && it.confidence >= 0.8 && !technical) {
       setStatus(db, msgs, "question", "skipped");
       await ack(THINKING);
       return [answerReply((await ask(db, ws, text, { channel: input.channel === "wecom" ? "wecom" : "web" })).text)];
+    }
+    // something the user typed in their own language with no value to check ("i have a meeting", "send it later"):
+    // not a spec line. Say what the bot needs instead of opening an empty check with a translation nobody asked for.
+    if (textOnly && !technical && !isChinese(text) && !ruleRead(text).parameters.length) {
+      setStatus(db, msgs, "question", "skipped");
+      return [{ kind: "text", text: SPEC_NOT_TECHNICAL }];
     }
     setStatus(db, msgs, "content", "assigned");
     if (msgs.some((m) => m.file_path)) await ack(THINKING); // documents take ~10 s; chat messages answer in a few
@@ -192,6 +212,27 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
   db.prepare(`INSERT INTO pending_groups (id, user_id, message_ids, candidate_ids, clues_json, awaiting, menu_sent_at, status) VALUES (?,?,?,?,?,?,?,'open')`)
     .run(newId("pg"), input.userId, JSON.stringify(msgs.map((m) => m.id)), "[]", "{}", "intent_choice", nowIso());
   return [{ kind: "menu", text: "Is this from someone you deal with, or a question for me?", buttons: [{ id: "int:content", label: "📥 Forwarded content" }, { id: "int:question", label: "❓ My question" }] }];
+}
+
+// ── courtesies (EN / IT / ZH) ──
+const NEXT_GENERIC = "Forward me anything new from your contacts whenever you like.";
+const NEXT_SPEC = "Forward more from the supplier any time, or write excel for the verification sheet.";
+const courtesyReply = (kind: "thanks" | "ack", electronics: boolean): OutgoingReply =>
+  ({ kind: "text", text: `${kind === "thanks" ? "🙏 You're welcome." : "👍"} ${electronics ? NEXT_SPEC : NEXT_GENERIC}` });
+const COURTESY_TAIL = String.raw`[\s!.,~。！，…]*(?:\p{Extended_Pictographic}|️)*[\s!.,~。！，…]*`;
+const GREETING = new RegExp(String.raw`^(?:hi|hello|hey|hola|ciao|salve|buongiorno|buonasera|good (?:morning|afternoon|evening)|你好|您好|哈喽|嗨)${COURTESY_TAIL}$`, "iu");
+const ACK_WORD = String.raw`(?:ok(?:ay)?|got it|perfect|great|cool|perfetto|ottimo|bene|super|va bene|好的|收到|明白)`;
+const THANKS_WORD = String.raw`(?:thanks?(?: a lot| so much)?|thank you(?: very much| so much)?|thx|ty|grazie(?: mille| tante)?|谢谢(?:你|您)?|多谢|感谢)`;
+const THANKS_RE = new RegExp(String.raw`^(?:${ACK_WORD}[\s,!.，]*)?${THANKS_WORD}${COURTESY_TAIL}$`, "iu");
+const ACK_RE = new RegExp(String.raw`^${ACK_WORD}${COURTESY_TAIL}$`, "iu");
+
+/** A typed greeting, thank-you or "ok" on its own → its kind; anything else (even short) → null. */
+export function smallTalk(text: string): "greeting" | "thanks" | "ack" | null {
+  const t = text.trim();
+  if (!t || t.length > 40) return null;
+  if (GREETING.test(t)) return "greeting";
+  if (THANKS_RE.test(t)) return "thanks";
+  return ACK_RE.test(t) ? "ack" : null;
 }
 
 /** An assistant answer; a Chinese draft inside it ("write a polite follow-up…") becomes copy-ready. */

@@ -1,7 +1,7 @@
 // Liveness + configuration check for deploys and monitoring. No secrets, no data: only what is set up.
 import { NextResponse } from "next/server";
 import { appDb } from "@/lib/server";
-import { provider } from "@/lib/adapters/llm";
+import { aiStatus } from "@/lib/adapters/llm";
 import { wecomConfigured } from "@/lib/channels/wecom";
 
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ export async function GET() {
   const body = {
     ok: db === "ok",
     app: "memini",
-    ai: provider,
+    ai: aiStatus(),
     wechat: wecomConfigured() ? "configured" : "not configured",
     publicUrl: process.env.APP_BASE_URL ?? null,
     db,

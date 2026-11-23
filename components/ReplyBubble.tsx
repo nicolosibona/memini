@@ -7,7 +7,9 @@ import { CopyButton } from "./CopyButton";
 /** The Chinese draft gets its own card on the web, so it is taken out of the running text. */
 export function withoutDraft(text: string, zh: string) {
   if (text === zh) return "";
-  return text.replace(zh, "").replace(/💬 Suggested reply \(copy and send\):\s*$/m, "").replace(/\n{3,}/g, "\n\n").trim();
+  return text.replace(zh, "").replace(/💬 Suggested reply \(copy and send\):\s*$/m, "")
+    .replace(/^[ \t]*(?:🇨🇳|🇬🇧)[ \t]*$\n?/gmu, "") // the flag that introduced the Chinese, now alone on its line
+    .replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function linkify(text: string) {

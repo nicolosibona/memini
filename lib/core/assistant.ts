@@ -4,7 +4,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { DB } from "@/lib/db";
 import { today } from "@/lib/db";
-import { anthropicClient, describeError, logCall, modelFor, openAIStyleGateway, provider, withTimeout } from "@/lib/adapters/llm";
+import { aiPaused, anthropicClient, describeError, logCall, modelFor, noteAiFailure, openAIStyleGateway, provider, withTimeout } from "@/lib/adapters/llm";
 import { comparisons, compareGroup, entityProfile, findEntityRefs, matterView, searchMemory, termValue, timeline, COMPARE_KEYS } from "./memory";
 import { formatValue, parseValue, sourceLabel, factLabel, fmtDay, type FactRow } from "./facts";
 import { entityLabel, listEntities } from "./entities";
@@ -104,10 +104,12 @@ Answer ONLY from what your tools return.
 export async function ask(db: DB, workspaceId: string, question: string, opts: { channel?: "wecom" | "web" } = {}): Promise<AssistantAnswer> {
   // the tool loop uses Claude's tool use; other back-ends get the rule-based assistant
   if (provider === "mock" || provider === "qwen" || openAIStyleGateway) return { ...ruleAnswer(db, workspaceId, question), source: "mock" };
+  if (aiPaused()) return { ...ruleAnswer(db, workspaceId, question), source: "fallback" }; // key rejected a moment ago
   try {
     return await withTimeout(liveAnswer(db, workspaceId, question, opts.channel ?? "web"), Number(process.env.ASSISTANT_TIMEOUT_MS ?? 60000));
   } catch (e) {
-    console.error("[assistant] live failed, using rule-based answer:", describeError(e));
+    const err = describeError(e);
+    if (!noteAiFailure(err)) console.error("[assistant] live failed, using rule-based answer:", err);
     return { ...ruleAnswer(db, workspaceId, question), source: "fallback" };
   }
 }

@@ -173,8 +173,11 @@ export function openDb(file: string): DB {
 /** The fixed demo workspace + user (D11: single user for the hackathon). */
 function seedBase(db: DB) {
   const now = new Date().toISOString();
-  db.prepare(`INSERT OR IGNORE INTO workspaces (id, name, profile, own_names, reply_language, created_at) VALUES (?, ?, 'china_business', ?, 'en', ?)`).run(
-    DEMO_WORKSPACE, "Demo workspace", JSON.stringify(["Nordlys Home Goods ApS", "Nordlys Trading (Shanghai) Co., Ltd.", "诺德利斯（上海）贸易有限公司", "Alex Morgan"]), now,
+  // the profile of a brand-new workspace (MEMINI_PROFILE in .env.local: electronics | sourcing | china_business);
+  // an existing database keeps its own, and Settings switches it
+  const profile = ["electronics", "sourcing", "china_business"].includes(process.env.MEMINI_PROFILE ?? "") ? process.env.MEMINI_PROFILE : "china_business";
+  db.prepare(`INSERT OR IGNORE INTO workspaces (id, name, profile, own_names, reply_language, created_at) VALUES (?, ?, ?, ?, 'en', ?)`).run(
+    DEMO_WORKSPACE, "Demo workspace", profile, JSON.stringify(["Nordlys Home Goods ApS", "Nordlys Trading (Shanghai) Co., Ltd.", "诺德利斯（上海）贸易有限公司", "Alex Morgan"]), now,
   );
   db.prepare(`INSERT OR IGNORE INTO users (id, workspace_id, email, created_at) VALUES (?, ?, ?, ?)`).run(DEMO_USER, DEMO_WORKSPACE, "demo@memini.local", now);
 }

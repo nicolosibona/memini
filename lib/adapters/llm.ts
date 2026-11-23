@@ -46,12 +46,43 @@ export type CallArgs<T> = {
 
 export type CallResult<T> = { data: T; source: LlmProvider | "fallback"; ms: number; error?: string };
 
+// ── Rejected key (401/403): stop calling for a while ──
+// An expired or revoked key fails every call. Without this, each message paid two failed round trips before falling
+// back to rules, and the log filled with the same error. Now the first rejection switches the app to rules for
+// AI_PAUSE_MS (default 10 min) with one clear log line; /api/health reports it.
+const AUTH_PAUSE_MS = Number(process.env.AI_PAUSE_MS ?? 10 * 60_000);
+const aiState = ((globalThis as unknown as { __memini_ai?: { pausedUntil: number; lastError: string | null } }).__memini_ai ??= { pausedUntil: 0, lastError: null });
+
+export const isAuthError = (msg: string) => /\b(401|403)\b|invalid[ _-]?(api[ _-]?key|token|x-api-key)|authentication|unauthori[sz]ed|permission denied/i.test(msg);
+
+/** Record a failed live call; a rejected key pauses AI calls. Returns true when the app is now on rules. */
+export function noteAiFailure(err: string): boolean {
+  if (!isAuthError(err)) return false;
+  if (Date.now() >= aiState.pausedUntil)
+    console.error(`[llm] the ${provider} key was rejected (${err.slice(0, 160)}). Using rules for the next ${Math.round(AUTH_PAUSE_MS / 60_000)} min: set a valid key in .env.local and restart.`);
+  aiState.pausedUntil = Date.now() + AUTH_PAUSE_MS;
+  aiState.lastError = err.slice(0, 300);
+  return true;
+}
+
+export const aiPaused = () => provider !== "mock" && Date.now() < aiState.pausedUntil;
+
+/** For /api/health: which AI back-end, and whether its key currently works. */
+export function aiStatus(): { provider: LlmProvider; state: "rules only" | "ok" | "key rejected"; detail?: string } {
+  if (provider === "mock") return { provider, state: "rules only" };
+  return aiPaused() ? { provider, state: "key rejected", detail: aiState.lastError ?? undefined } : { provider, state: "ok" };
+}
+
 export async function callJSON<T>(args: CallArgs<T>): Promise<CallResult<T>> {
   const t0 = Date.now();
   if (provider === "mock") {
     await new Promise((r) => setTimeout(r, Number(process.env.MOCK_DELAY_MS ?? 300))); // feel like a real call
     logCall({ step: args.step, model: "mock", source: "mock", ms: Date.now() - t0 });
     return { data: args.fallback(), source: "mock", ms: Date.now() - t0 };
+  }
+  if (aiPaused()) {
+    logCall({ step: args.step, model: modelFor(args.step), source: "fallback", ms: 0 });
+    return { data: args.fallback(), source: "fallback", ms: Date.now() - t0, error: "AI paused: key rejected" };
   }
   let lastErr = "";
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -65,9 +96,10 @@ export async function callJSON<T>(args: CallArgs<T>): Promise<CallResult<T>> {
     } catch (e) {
       lastErr = describeError(e);
       if (lastErr.startsWith("timeout")) break; // don't wait twice on stage
+      if (noteAiFailure(lastErr)) break; // a rejected key won't work on the second try either
     }
   }
-  console.error(`[llm] ${provider}/${args.step} failed, using fallback: ${lastErr}`);
+  if (!isAuthError(lastErr)) console.error(`[llm] ${provider}/${args.step} failed, using fallback: ${lastErr}`);
   logCall({ step: args.step, model: modelFor(args.step), source: "fallback", ms: Date.now() - t0 });
   return { data: args.fallback(), source: "fallback", ms: Date.now() - t0, error: lastErr };
 }

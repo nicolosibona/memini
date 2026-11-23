@@ -14,7 +14,11 @@ import { checkTranslation } from "./quantity";
 export type SpecMsg = { id: string; kind: string; text_original: string | null; file_path: string | null; original_author: string | null };
 
 export const SPEC_WELCOME =
-  "👋 I'm Memini, your electronics spec checker.\n\nForward me your messages with the supplier, your spec and their datasheets (PDF, photo or text). I translate every technical line — numbers, units and limits verified — and check what they say against what you asked.\n\nWrite *excel* when you want the verification sheet for the supplier.\n/new starts a new check";
+  "👋 I'm Memini, your electronics spec checker.\n\nForward me your messages with the supplier, your spec and their datasheets (PDF, photo or text). I translate every technical line — numbers, units and limits verified — and check what they say against what you asked.\n\nWrite \"excel\" when you want the verification sheet for the supplier.\n/new starts a new check · /help shows this again";
+
+/** Typed text with no value to check and no question: tell the user what the bot works with. */
+export const SPEC_NOT_TECHNICAL =
+  "I didn't find any technical value in that, so I left your spec check as it is.\n\n• Forward the supplier's messages, datasheets or photos, or type your requirement with its value (\"ripple ≤ 100 mV\")\n• Save a date: \"Meeting with the supplier on Dec 15 at 3pm\"\n• Write \"excel\" for the verification sheet";
 
 /** "excel", "/excel", "fammi l'excel", "send me the spreadsheet", "核对表"… → the sheet. */
 export const isSheetRequest = (text: string) =>

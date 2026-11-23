@@ -130,4 +130,49 @@ describe("spec check through the bot", async () => {
     expect(r.text).toContain("New spec check");
     expect(currentCheck(db, DEMO_USER)!.id).not.toBe(before);
   });
+
+  // seen in the server logs after the demo: a thank-you became a spec line with a "谢谢" draft for the supplier,
+  // and "i have a meeting" opened an empty check
+  it("chit-chat and the user's own plans never go into the spec check", async () => {
+    const id = currentCheck(db, DEMO_USER)!.id;
+    const items = () => loadCheck(db, id)!.items.length;
+    const before = items();
+    const [thanks] = await send([{ kind: "text", text: "GRAZIE" }]);
+    expect(thanks.kind).toBe("text");
+    expect(thanks.text).toContain("You're welcome");
+    expect(thanks.copy).toBeUndefined();
+    const [hi] = await send([{ kind: "text", text: "ciao!" }]);
+    expect(hi.text).toContain("spec checker");
+    const [meeting] = await send([{ kind: "text", text: "i have a meeting" }]);
+    expect(meeting.text).toContain("Which day?");
+    const [dated] = await send([{ kind: "text", text: "I have a meeting with the supplier on 15 December" }]);
+    expect(dated.text).toContain("📅 Added");
+    const [other] = await send([{ kind: "text", text: "send it to the factory later" }]);
+    expect(other.text).toContain("didn't find any technical value");
+    expect(items()).toBe(before);
+    expect(currentCheck(db, DEMO_USER)!.id).toBe(id);
+    // a typed requirement with a value still counts
+    await send([{ kind: "text", text: "ripple ≤ 100 mV" }]);
+    expect(items()).toBe(before + 1);
+  });
+});
+
+describe("small talk", async () => {
+  const { smallTalk } = await import("@/lib/core/ingest");
+  it("recognises courtesies in EN / IT / ZH, alone", () => {
+    for (const t of ["GRAZIE", "grazie mille 🙏", "thanks!", "ok thanks", "谢谢", "谢谢您！"]) expect(smallTalk(t), t).toBe("thanks");
+    for (const t of ["ciao", "Hello!", "您好", "buongiorno"]) expect(smallTalk(t), t).toBe("greeting");
+    for (const t of ["ok", "perfetto!", "收到", "好的"]) expect(smallTalk(t), t).toBe("ack");
+    for (const t of ["thanks, but the ripple is 150 mV", "您好，纹波≤150mV", "ok send the excel", "ciao, quali sono le mie cose da fare?"]) expect(smallTalk(t), t).toBeNull();
+  });
+});
+
+describe("rejected AI key", async () => {
+  const { isAuthError } = await import("@/lib/adapters/llm");
+  it("is told apart from other failures", () => {
+    expect(isAuthError('401 {"error":{"message":"Invalid token. (request id: x)","type":"shell_api_error"}}')).toBe(true);
+    expect(isAuthError("invalid_api_key")).toBe(true);
+    expect(isAuthError("timeout after 4000ms")).toBe(false);
+    expect(isAuthError("Failed to parse structured output")).toBe(false);
+  });
 });

@@ -318,12 +318,29 @@ async function send(db: DB, ext: string, openKfId: string, replies: OutgoingRepl
   }
 }
 
+/** Deliver what waited for this message. They count toward WeChat's ~5-message budget like any reply (they used not
+ *  to, so the reply after them hit 95001), and what can't go out now stays held instead of being lost. Never throws:
+ *  the user's new message is processed whatever happens here. */
 async function flushHeld(db: DB, ext: string, openKfId: string) {
   const held = JSON.parse(state.get(db, `held:${ext}`) ?? "[]") as Record<string, unknown>[];
   if (!held.length) return;
   state.set(db, `held:${ext}`, "[]");
-  await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, msgtype: "text", text: { content: `📬 I have ${held.length} update${held.length > 1 ? "s" : ""} for you:` } }, db);
-  for (const p of held) await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...(await materialize(db, p).catch(() => ({ msgtype: "text", text: { content: "📊 A file is ready in the web app." } }))) }, db);
+  const room = Math.max(0, SEND_BUDGET - 2); // keep two messages for the answer to what the user just sent
+  const now = held.slice(0, room), later = held.slice(room);
+  const intro = { msgtype: "text", text: { content: `📬 I have ${held.length} update${held.length > 1 ? "s" : ""} for you${later.length ? ` (here are ${now.length}, the rest with your next message)` : ""}:` } };
+  const queue = now.length ? [intro, ...now] : [];
+  let sent = 0;
+  try {
+    for (const p of queue) {
+      await post("/kf/send_msg", { touser: ext, open_kfid: openKfId, ...(await materialize(db, p).catch(() => ({ msgtype: "text", text: { content: "📊 A file is ready in the web app." } }))) }, db);
+      sent++;
+    }
+  } catch (e) {
+    console.error(`[wecom] held updates: ${sent}/${queue.length} delivered, keeping the rest:`, e instanceof Error ? e.message : e);
+  }
+  const left = [...queue.slice(Math.max(1, sent)), ...later].filter((p) => p !== intro);
+  state.set(db, `held:${ext}`, JSON.stringify(left));
+  state.set(db, `budget:${ext}`, String(sent));
 }
 
 /** WeChat can only write to a user for 48 h after their last message (and ~5 messages). */
