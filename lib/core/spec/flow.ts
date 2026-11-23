@@ -4,29 +4,38 @@
 import type { DB } from "@/lib/db";
 import { appUrl } from "../links";
 import type { OutgoingReply } from "../reply";
+import { LANGS, uiLang, workspaceLang, type Lang } from "../lang";
 import { STATUS_LABEL, type Row } from "./compare";
 import { readSpecItem } from "./extract";
 import { addItem, checkTitle, currentCheck, loadCheck, newCheck, setItemSide, type CheckView } from "./store";
 import { writeSheet } from "./sheet";
 import { EU_DISCLAIMER, euWarnings } from "./eu";
 import { checkTranslation } from "./quantity";
+import { isPartChangeNote } from "./params";
+import { rowLabel, S } from "./i18n";
 
 export type SpecMsg = { id: string; kind: string; text_original: string | null; file_path: string | null; original_author: string | null };
 
-export const SPEC_WELCOME =
-  "👋 I'm Memini, your electronics spec checker.\n\nForward me your messages with the supplier, your spec and their datasheets (PDF, photo or text). I translate every technical line — numbers, units and limits verified — and check what they say against what you asked.\n\nWrite \"excel\" when you want the verification sheet for the supplier.\n/new starts a new check · /help shows this again";
+const wsOfUser = (db: DB, userId: string) => (db.prepare(`SELECT workspace_id AS w FROM users WHERE id = ?`).get(userId) as { w: string }).w;
+const T = (lang: Lang) => S(uiLang(lang));
+
+/** The welcome, in the user's language (chosen on the web app: Settings, or the chip on Today). */
+export const specWelcome = (lang: Lang): OutgoingReply => ({ kind: "text", text: T(lang).welcome(LANGS[lang].native) });
+export const SPEC_WELCOME = S("en").welcome("English");
 
 /** Typed text with no value to check and no question: tell the user what the bot works with. */
-export const SPEC_NOT_TECHNICAL =
-  "I didn't find any technical value in that, so I left your spec check as it is.\n\n• Forward the supplier's messages, datasheets or photos, or type your requirement with its value (\"ripple ≤ 100 mV\")\n• Save a date: \"Meeting with the supplier on Dec 15 at 3pm\"\n• Write \"excel\" for the verification sheet";
+export const specNotTechnical = (db: DB, ws: string) => T(workspaceLang(db, ws)).notTechnical;
+export const SPEC_NOT_TECHNICAL = S("en").notTechnical;
+export const specCourtesy = (db: DB, ws: string, kind: "thanks" | "ack") => T(workspaceLang(db, ws))[kind];
 
 /** "excel", "/excel", "fammi l'excel", "send me the spreadsheet", "核对表"… → the sheet. */
 export const isSheetRequest = (text: string) =>
   text.trim().length <= 80 && /^\/(sheet|excel|xlsx)\b|\b(excel|xlsx|spreadsheet|foglio)\b|表格|核对表/i.test(text.trim());
 
 export async function handleSpecContent(db: DB, ws: string, userId: string, msgs: SpecMsg[]): Promise<OutgoingReply[]> {
+  const lang = workspaceLang(db, ws);
   const check = currentCheck(db, userId) ?? newCheck(db, ws, userId);
-  const read = await Promise.all(msgs.map(async (m) => ({ m, r: await readSpecItem({ text: m.text_original, filePath: m.file_path, author: m.original_author }) })));
+  const read = await Promise.all(msgs.map(async (m) => ({ m, r: await readSpecItem({ text: m.text_original, filePath: m.file_path, author: m.original_author, lang }) })));
   const added: string[] = [];
   for (const { m, r } of read) {
     if (!r.data.parameters.length && !r.data.segments.length) continue;
@@ -34,39 +43,42 @@ export async function handleSpecContent(db: DB, ws: string, userId: string, msgs
     const side = r.data.role === "unclear" ? (r.data.language === "zh" ? "supplier" : "requirement") : r.data.role;
     added.push(addItem(db, check.id, { messageId: m.id, side, kind: m.kind, author: m.original_author, filePath: m.file_path, text: m.text_original, data: r.data, source: r.source }));
   }
-  if (!added.length) return [{ kind: "text", text: "I couldn't find any technical content in that. Forward a spec, a datasheet or a message with values." }];
-  return itemReplies(loadCheck(db, check.id)!, added);
+  if (!added.length) return [{ kind: "text", text: T(lang).noTech }];
+  return itemReplies(loadCheck(db, check.id)!, added, lang);
 }
 
 export async function specCommand(db: DB, ws: string, userId: string, cmd: string): Promise<OutgoingReply[] | null> {
+  const lang = workspaceLang(db, ws);
   if (cmd === "/new" || cmd === "/nuovo") {
     newCheck(db, ws, userId);
-    return [{ kind: "text", text: "🆕 New spec check. Forward your messages with the supplier, your spec and their datasheets." }];
+    return [{ kind: "text", text: T(lang).newCheck }];
   }
   if (cmd === "/sheet" || cmd === "/excel" || cmd === "/xlsx" || cmd === "/check") return sheetFor(db, userId);
-  if (cmd === "/help" || cmd === "/start") return [{ kind: "text", text: SPEC_WELCOME }];
+  if (cmd === "/help" || cmd === "/start") return [specWelcome(lang)];
   return null;
 }
 
 export async function sheetFor(db: DB, userId: string): Promise<OutgoingReply[]> {
+  const lang = workspaceLang(db, wsOfUser(db, userId));
   const c = currentCheck(db, userId) ?? (db.prepare(`SELECT * FROM spec_checks WHERE user_id = ? AND EXISTS (SELECT 1 FROM spec_items i WHERE i.check_id = spec_checks.id) ORDER BY updated_at DESC LIMIT 1`).get(userId) as { id: string } | undefined);
   const v = c && loadCheck(db, c.id);
-  if (!v?.items.length) return [{ kind: "text", text: "Nothing to check yet. Forward your messages with the supplier, your spec or their datasheet first." }];
-  return sheetReplies(v);
+  if (!v?.items.length) return [{ kind: "text", text: T(lang).nothingYet }];
+  return sheetReplies(v, lang);
 }
 
 /** Menu taps: spec:new, spec:sheet, spec:swap:<item id> */
 export async function specMenu(db: DB, ws: string, userId: string, arg: string): Promise<OutgoingReply[]> {
+  const lang = workspaceLang(db, ws);
   if (arg === "new") return (await specCommand(db, ws, userId, "/new"))!;
   if (arg === "sheet") return sheetFor(db, userId);
   const swap = arg.match(/^swap:(.+)$/);
   if (swap) {
     const it = db.prepare(`SELECT check_id, side FROM spec_items WHERE id = ?`).get(swap[1]) as { check_id: string; side: string } | undefined;
-    if (!it) return [{ kind: "text", text: "I can't find that item any more." }];
+    if (!it) return [{ kind: "text", text: T(lang).itemGone }];
     setItemSide(db, swap[1], it.side === "supplier" ? "requirement" : "supplier");
-    return itemReplies(loadCheck(db, it.check_id)!, [swap[1]], `↔️ Moved to ${it.side === "supplier" ? "your side" : "the supplier's side"}.`);
+    return itemReplies(loadCheck(db, it.check_id)!, [swap[1]], lang, it.side === "supplier" ? T(lang).movedToYours : T(lang).movedToSupplier);
   }
-  return [{ kind: "text", text: "That button is no longer active." }];
+  return [{ kind: "text", text: T(lang).inactive }];
 }
 
 const lim = (s: string, n = 46) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -74,19 +86,20 @@ const SHEET_BUTTON = { id: "spec:sheet", label: "📊 Excel" };
 
 /** Right after a forward: ONE short message — each item translated, what it changes, the running score. No file:
  *  the sheet comes when asked ("excel"), so forwarding stays fast and within WeChat's message limit. */
-function itemReplies(v: CheckView, itemIds: string[], prefix?: string): OutgoingReply[] {
+function itemReplies(v: CheckView, itemIds: string[], lang: Lang, prefix?: string): OutgoingReply[] {
+  const t = T(lang);
   const blocks: string[] = prefix ? [prefix] : [];
   let myZh: string | null = null;
   for (const it of v.items.filter((i) => itemIds.includes(i.id)).slice(0, 6)) {
     const mine = it.side === "requirement";
-    const who = it.author ?? (it.file_path ? lim(it.title, 40) : mine ? "You" : "Supplier");
+    const who = it.author ?? (it.file_path ? lim(it.title, 40) : mine ? t.you : t.supplier);
     const tr = it.data.segments.map((s) => s.translation).join(" ").trim();
     const allKept = it.data.segments.every((s) => checkTranslation(s.original, s.translation).ok);
-    const lines = [`${mine ? "📐" : "🏭"} ${who}${it.file_path ? ` · ${it.data.parameters.length} values` : ""}`];
-    if (!it.file_path && tr) lines.push(`${mine ? "🇨🇳" : "🇬🇧"} ${lim(tr, 320)}`);
-    if (it.data.segments.length) lines.push(allKept ? "✓ numbers, units and limits kept" : "⚠️ some numbers to check by hand");
+    const lines = [`${mine ? "📐" : "🏭"} ${who}${it.file_path ? ` · ${t.values(it.data.parameters.length)}` : ""}`];
+    if (!it.file_path && tr) lines.push(`${mine ? "🇨🇳" : LANGS[lang].flag} ${lim(tr, 320)}`);
+    if (it.data.segments.length) lines.push(allKept ? t.kept : t.byHand);
     const hits = v.rows.filter((r) => (r.sup?.item_id === it.id || r.req?.item_id === it.id) && r.req && r.sup && (r.status === "mismatch" || r.status === "check"));
-    for (const r of hits.slice(0, 5)) lines.push(`${STATUS_LABEL[r.status].icon} ${mismatchLine(r)}`);
+    for (const r of hits.slice(0, 5)) lines.push(`${STATUS_LABEL[r.status].icon} ${mismatchLine(r, lang)}`);
     for (const n of v.notes.filter((n) => n.item_title === it.title && n.risk === "high").slice(0, 2)) lines.push(`⚠️ 「${lim(n.quote, 24)}」 ${lim(n.text_en, 110)}`);
     blocks.push(lines.join("\n"));
     if (mine && !it.file_path && tr && /[一-鿿]/.test(tr)) myZh = tr;
@@ -94,41 +107,38 @@ function itemReplies(v: CheckView, itemIds: string[], prefix?: string): Outgoing
   const reqN = v.items.filter((i) => i.side === "requirement").length, supN = v.items.length - reqN;
   const c = v.counts;
   const eu = euWarnings(v.rows, v.notes);
-  if (reqN && supN) blocks.push(`So far: 🔴 ${c.mismatch} · 🟡 ${c.check + c.missing} · ✅ ${c.ok}${eu.length ? ` · 🇪🇺 ${eu.length} EU warning${eu.length > 1 ? "s" : ""}` : ""}`);
+  if (reqN && supN) blocks.push(`${t.soFar}: 🔴 ${c.mismatch} · 🟡 ${c.check + c.missing} · ✅ ${c.ok}${eu.length ? ` · 🇪🇺 ${t.euWarnings(eu.length)}` : ""}`);
   return [{
-    kind: "menu", text: blocks.join("\n\n"), prompt: "Write excel (or tap 📊) for the verification sheet:",
-    ...(myZh ? { copy: { label: "📋 Chinese only", text: myZh } } : {}),
-    buttons: [SHEET_BUTTON, { id: "spec:new", label: "🆕 New check" }],
+    kind: "menu", text: blocks.join("\n\n"), prompt: t.sheetPrompt,
+    ...(myZh ? { copy: { label: t.copyLabel, text: myZh } } : {}),
+    buttons: [SHEET_BUTTON, { id: "spec:new", label: t.newCheckButton }],
   }];
 }
 
 /** "excel": the result, the sheet, and the Chinese message to send with it (3 messages, no AI call: instant). */
-async function sheetReplies(v: CheckView): Promise<OutgoingReply[]> {
-  const sheet = await writeSheet(v);
+async function sheetReplies(v: CheckView, lang: Lang): Promise<OutgoingReply[]> {
+  const t = T(lang), ul = uiLang(lang);
+  const sheet = await writeSheet(v, lang);
   const reqN = v.items.filter((i) => i.side === "requirement").length, supN = v.items.length - reqN;
   const c = v.counts;
+  const names = (st: Row["status"]) => v.rows.filter((r) => r.status === st).map((r) => rowLabel(r, lang)).slice(0, 4).join(", ");
   const lines = [`📊 ${checkTitle(v.check)}${v.check.supplier_name ? ` · ${v.check.supplier_name}` : ""}`];
   if (reqN && supN) {
-    if (c.mismatch) lines.push(`🔴 ${c.mismatch} MISMATCH${c.mismatch > 1 ? "ES" : ""}\n${v.rows.filter((r) => r.status === "mismatch").slice(0, 8).map((r, i) => `${i + 1}. ${mismatchLine(r)}`).join("\n")}`);
-    lines.push([
-      c.check ? `🟡 To confirm: ${v.rows.filter((r) => r.status === "check").map((r) => r.label_en).slice(0, 4).join(", ")}` : "",
-      c.missing ? `⚠️ Not stated: ${v.rows.filter((r) => r.status === "missing").map((r) => r.label_en).slice(0, 4).join(", ")}` : "",
-      `✅ ${c.ok} OK`,
-    ].filter(Boolean).join("\n"));
-  } else lines.push(reqN ? "Only your side so far: the sheet asks the supplier to fill in their values." : "Only the supplier's side so far: add your requirements to compare.");
+    if (c.mismatch) lines.push(`${t.mismatches(c.mismatch)}\n${v.rows.filter((r) => r.status === "mismatch").slice(0, 8).map((r, i) => `${i + 1}. ${mismatchLine(r, lang)}`).join("\n")}`);
+    lines.push([c.check ? `${t.toConfirm}${names("check")}` : "", c.missing ? `${t.notStated}${names("missing")}` : "", t.okCount(c.ok)].filter(Boolean).join("\n"));
+  } else lines.push(reqN ? t.onlyYours : t.onlySupplier);
   const eu = euWarnings(v.rows, v.notes);
-  if (eu.length) lines.push(`🇪🇺 EU compliance — might not pass:\n${eu.map((w) => `• ${w.en}`).join("\n")}\n(${EU_DISCLAIMER.en})`);
+  if (eu.length) lines.push(`${t.euHeader}\n${eu.map((w) => `• ${w[ul]}`).join("\n")}\n(${EU_DISCLAIMER[ul]})`);
   const zh = supplierMessageZh(v, reqN > 0 && supN > 0);
   return [
     { kind: "text", text: lines.join("\n\n") },
     { kind: "file", text: `📊 ${sheet.name}`, file: { path: sheet.path, name: sheet.name, url: appUrl(`/api/specs/${v.check.id}/sheet`) } },
-    { kind: "menu", text: "💬 Forward the sheet to the supplier. Tap 📋 for the Chinese message to send with it:", prompt: "Tap 📋 for the Chinese message:", copy: { label: "📋 Chinese only", text: zh }, buttons: [{ id: "spec:new", label: "🆕 New check" }] },
+    { kind: "menu", text: t.forwardSheet, prompt: t.tapCopy, copy: { label: t.copyLabel, text: zh }, buttons: [{ id: "spec:new", label: t.newCheckButton }] },
   ];
 }
 
-function mismatchLine(r: Row) {
-  const changed = r.earlier.length ? ` (was ${r.earlier.at(-1)!.value})` : "";
-  return `${r.label_en}: you ${r.req?.value ?? "—"} → supplier ${r.sup?.value ?? "—"}${changed}`;
+function mismatchLine(r: Row, lang: Lang = "en") {
+  return T(lang).mismatchLine(rowLabel(r, lang), r.req?.value ?? "—", r.sup?.value ?? "—", r.earlier.length ? r.earlier.at(-1)!.value : null);
 }
 
 /** The Chinese message that goes with the sheet. Built from the table, not by a model: the numbers can't drift. */
@@ -144,7 +154,7 @@ export function supplierMessageZh(v: CheckView, compared: boolean): string {
   const line = (r: Row) => r.key === "protections" || r.key === "certifications" ? `${r.label_zh}：${r.reason_zh}` : `${r.label_zh}：我方要求 ${zhv(r.req?.value)}，贵方 ${zhv(r.sup?.value)}`;
   if (bad.length) parts.push(`以下 ${bad.length} 项不符合：\n${bad.slice(0, 8).map((r, i) => `${i + 1}. ${line(r)}`).join("\n")}`);
   if (open.length) parts.push(`以下 ${open.length} 项请确认或补充：${open.slice(0, 6).map((r) => `${r.label_zh}（${STATUS_LABEL[r.status].zh}）`).join("、")}`);
-  if (v.notes.some((n) => /substitut|changed a part|Same parameters/i.test(n.text_en))) parts.push("如有更换物料（包括国产替代料），请提供新物料的规格书，经我方书面确认后再生产。");
+  if (v.notes.some(isPartChangeNote)) parts.push("如有更换物料（包括国产替代料），请提供新物料的规格书，经我方书面确认后再生产。");
   if (euWarnings(v.rows, v.notes).length) parts.push("另外，产品需符合欧盟要求（CE/RoHS、生态设计 ErP），请提供欧盟符合性声明（DoC）及相关测试报告。");
   parts.push("请在表格「贵方确认」栏逐项回复，并填写可以保证的数值。谢谢！");
   return parts.join("\n\n");

@@ -9,6 +9,8 @@ import { wecomConfigured } from "@/lib/channels/wecom";
 import { PROFILES } from "@/lib/core/domain";
 import { Card, CardHead, Page, PageHeader, Pill, BracketLink } from "@/components/ui";
 import { ProfileForm, DemoReset } from "@/components/SettingsActions";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { langOptions, workspaceLang } from "@/lib/core/lang";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
@@ -30,6 +32,14 @@ export default async function SettingsPage() {
           <CardHead title="Your scope" />
           <div className="px-6 pb-6">
             <ProfileForm profile={profile.key} ownNames={JSON.parse(ws.own_names) as string[]} profiles={Object.entries(PROFILES).map(([k, v]) => ({ key: k, label: v.label, description: v.description }))} />
+          </div>
+        </Card>
+
+        <Card>
+          <CardHead title="Your language" />
+          <div className="px-6 pb-6 space-y-3">
+            <p className="text-[13.5px] text-muted leading-relaxed">What the supplier&apos;s Chinese is translated into, and what you write is translated from. In English, Italiano, Deutsch, Français and Español the bot&apos;s messages, the parameter names and the verification sheet are in your language too; in the others the AI translates and the rest stays in English. The WeChat bot follows this setting.</p>
+            <LanguagePicker variant="field" value={workspaceLang(db, CURRENT_WS)} options={langOptions()} />
           </div>
         </Card>
 

@@ -24,7 +24,8 @@ import { createConfirmLink, missingDocs, termChoices } from "./confirm";
 import { calendarPageUrl } from "./calendar";
 import { DOC_TYPES, ENTITY_KINDS, MATTER_KINDS, SELF_KINDS, profileOf, type DocType, type EntityKind, type MatterKind } from "./domain";
 import { isChinese, nameSimilarity } from "./normalize";
-import { handleSpecContent, isSheetRequest, sheetFor, specCommand, specMenu, SPEC_NOT_TECHNICAL, SPEC_WELCOME } from "./spec/flow";
+import { handleSpecContent, isSheetRequest, sheetFor, specCommand, specCourtesy, specMenu, specNotTechnical, specWelcome } from "./spec/flow";
+import { workspaceLang } from "./lang";
 import { ruleRead } from "./spec/extract";
 import type { DocumentExtraction, TextExtraction } from "./schemas";
 
@@ -134,7 +135,7 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
     return handleMenu(db, ws, input.userId, menu.menuId!);
   }
   const ev = items.find((i) => i.kind === "event");
-  if (ev) return ev.event === "enter_session" ? [welcome(profileKey(db, ws))] : [];
+  if (ev) return ev.event === "enter_session" ? [welcome(db, ws)] : [];
 
   const textOnly = items.every((i) => i.kind === "text");
   const joined = items.map((i) => i.text ?? "").join("\n").trim();
@@ -161,7 +162,7 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
   const courtesy = textOnly && !input.entityId && input.channel !== "email" && input.channel !== "supplier_link" ? smallTalk(text) : null;
   if (courtesy) {
     setStatus(db, msgs, "command", "skipped");
-    return [courtesy === "greeting" ? welcome(profileKey(db, ws)) : courtesyReply(courtesy, electronics)];
+    return [courtesy === "greeting" ? welcome(db, ws) : electronics ? { kind: "text", text: specCourtesy(db, ws, courtesy) } : courtesyReply(courtesy)];
   }
   if (electronics) {
     // electronics spec check: what the supplier sent goes into the open check; questions go to the assistant and
@@ -184,7 +185,7 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
     // not a spec line. Say what the bot needs instead of opening an empty check with a translation nobody asked for.
     if (textOnly && !technical && !isChinese(text) && !ruleRead(text).parameters.length) {
       setStatus(db, msgs, "question", "skipped");
-      return [{ kind: "text", text: SPEC_NOT_TECHNICAL }];
+      return [{ kind: "text", text: specNotTechnical(db, ws) }];
     }
     setStatus(db, msgs, "content", "assigned");
     if (msgs.some((m) => m.file_path)) await ack(THINKING); // documents take ~10 s; chat messages answer in a few
@@ -215,10 +216,8 @@ async function handleIncomingInner(input: IncomingInput, db: DB): Promise<Outgoi
 }
 
 // ── courtesies (EN / IT / ZH) ──
-const NEXT_GENERIC = "Forward me anything new from your contacts whenever you like.";
-const NEXT_SPEC = "Forward more from the supplier any time, or write excel for the verification sheet.";
-const courtesyReply = (kind: "thanks" | "ack", electronics: boolean): OutgoingReply =>
-  ({ kind: "text", text: `${kind === "thanks" ? "🙏 You're welcome." : "👍"} ${electronics ? NEXT_SPEC : NEXT_GENERIC}` });
+const courtesyReply = (kind: "thanks" | "ack"): OutgoingReply =>
+  ({ kind: "text", text: `${kind === "thanks" ? "🙏 You're welcome." : "👍"} Forward me anything new from your contacts whenever you like.` });
 const COURTESY_TAIL = String.raw`[\s!.,~。！，…]*(?:\p{Extended_Pictographic}|️)*[\s!.,~。！，…]*`;
 const GREETING = new RegExp(String.raw`^(?:hi|hello|hey|hola|ciao|salve|buongiorno|buonasera|good (?:morning|afternoon|evening)|你好|您好|哈喽|嗨)${COURTESY_TAIL}$`, "iu");
 const ACK_WORD = String.raw`(?:ok(?:ay)?|got it|perfect|great|cool|perfetto|ottimo|bene|super|va bene|好的|收到|明白)`;
@@ -847,8 +846,9 @@ function confirmLinkReplies(db: DB, userId: string, matterId: string): OutgoingR
   }
 }
 
-function welcome(profile: string): OutgoingReply {
-  if (profile === "electronics") return { kind: "text", text: SPEC_WELCOME };
+function welcome(db: DB, ws: string): OutgoingReply {
+  const profile = profileKey(db, ws);
+  if (profile === "electronics") return specWelcome(workspaceLang(db, ws));
   const business = profileOf(profile) === profileOf("china_business");
   return {
     kind: "text",

@@ -75,6 +75,76 @@ export type ParamKey = keyof typeof PARAMS;
 export const PARAM_KEYS = Object.keys(PARAMS) as [ParamKey, ...ParamKey[]];
 export const paramDef = (k: string): ParamDef => (PARAMS as Record<string, ParamDef>)[k] ?? PARAMS.other;
 
+/** The same locked names in the other full languages (it · de · fr · es): parameter names on the sheet and in the bot,
+ *  and keywords for the rule reader. English and Chinese stay the reference. */
+export const PARAM_LABELS: Record<ParamKey, [it: string, de: string, fr: string, es: string]> = {
+  input_voltage: ["Tensione di ingresso", "Eingangsspannung", "Tension d'entrée", "Tensión de entrada"],
+  input_frequency: ["Frequenza di ingresso", "Eingangsfrequenz", "Fréquence d'entrée", "Frecuencia de entrada"],
+  input_current: ["Corrente di ingresso", "Eingangsstrom", "Courant d'entrée", "Corriente de entrada"],
+  output_voltage: ["Tensione di uscita", "Ausgangsspannung", "Tension de sortie", "Tensión de salida"],
+  output_current: ["Corrente di uscita", "Ausgangsstrom", "Courant de sortie", "Corriente de salida"],
+  output_power: ["Potenza di uscita", "Ausgangsleistung", "Puissance de sortie", "Potencia de salida"],
+  voltage_accuracy: ["Precisione della tensione", "Spannungsgenauigkeit", "Précision de la tension", "Precisión de la tensión"],
+  ripple_noise: ["Ripple e rumore", "Restwelligkeit und Rauschen", "Ondulation et bruit", "Rizado y ruido"],
+  efficiency: ["Efficienza", "Wirkungsgrad", "Rendement", "Eficiencia"],
+  power_factor: ["Fattore di potenza", "Leistungsfaktor", "Facteur de puissance", "Factor de potencia"],
+  standby_power: ["Potenza a vuoto", "Leerlaufleistung", "Consommation à vide", "Consumo en vacío"],
+  inrush_current: ["Corrente di spunto", "Einschaltstrom", "Courant d'appel", "Corriente de irrupción"],
+  leakage_current: ["Corrente di dispersione", "Ableitstrom", "Courant de fuite", "Corriente de fuga"],
+  isolation_voltage: ["Tensione di isolamento (rigidità dielettrica)", "Isolationsspannung (Spannungsfestigkeit)", "Tension d'isolement (rigidité diélectrique)", "Tensión de aislamiento (rigidez dieléctrica)"],
+  insulation_resistance: ["Resistenza di isolamento", "Isolationswiderstand", "Résistance d'isolement", "Resistencia de aislamiento"],
+  hold_up_time: ["Tempo di mantenimento", "Haltezeit", "Temps de maintien", "Tiempo de retención"],
+  switching_frequency: ["Frequenza di commutazione", "Schaltfrequenz", "Fréquence de découpage", "Frecuencia de conmutación"],
+  protections: ["Protezioni", "Schutzfunktionen", "Protections", "Protecciones"],
+  capacitance: ["Capacità", "Kapazität", "Capacité", "Capacidad"],
+  resistance: ["Resistenza", "Widerstand", "Résistance", "Resistencia"],
+  inductance: ["Induttanza", "Induktivität", "Inductance", "Inductancia"],
+  rated_voltage: ["Tensione nominale", "Nennspannung", "Tension nominale", "Tensión nominal"],
+  rated_current: ["Corrente nominale", "Nennstrom", "Courant nominal", "Corriente nominal"],
+  rated_power: ["Potenza nominale", "Nennleistung", "Puissance nominale", "Potencia nominal"],
+  tolerance: ["Tolleranza", "Toleranz", "Tolérance", "Tolerancia"],
+  temp_rating: ["Classe di temperatura", "Temperaturklasse", "Température nominale", "Temperatura nominal"],
+  esr: ["ESR", "ESR", "ESR", "ESR"],
+  ripple_current: ["Corrente di ripple", "Rippelstrom", "Courant d'ondulation", "Corriente de rizado"],
+  lifetime: ["Durata di vita", "Lebensdauer", "Durée de vie", "Vida útil"],
+  temp_coefficient: ["Coefficiente di temperatura", "Temperaturkoeffizient", "Coefficient de température", "Coeficiente de temperatura"],
+  operating_temp: ["Temperatura di esercizio", "Betriebstemperatur", "Température de fonctionnement", "Temperatura de funcionamiento"],
+  storage_temp: ["Temperatura di stoccaggio", "Lagertemperatur", "Température de stockage", "Temperatura de almacenamiento"],
+  humidity: ["Umidità di esercizio", "Luftfeuchtigkeit im Betrieb", "Humidité de fonctionnement", "Humedad de funcionamiento"],
+  mtbf: ["MTBF", "MTBF", "MTBF", "MTBF"],
+  ip_rating: ["Grado di protezione IP", "Schutzart (IP)", "Indice de protection IP", "Grado de protección IP"],
+  flammability: ["Classe di infiammabilità", "Brennbarkeitsklasse", "Classe d'inflammabilité", "Clase de inflamabilidad"],
+  noise_level: ["Rumore acustico", "Geräuschpegel", "Bruit acoustique", "Ruido acústico"],
+  package: ["Package (contenitore)", "Gehäuseform (Package)", "Boîtier", "Encapsulado"],
+  dimensions: ["Dimensioni", "Abmessungen", "Dimensions", "Dimensiones"],
+  weight: ["Peso", "Gewicht", "Poids", "Peso"],
+  connector: ["Connettore", "Steckverbinder", "Connecteur", "Conector"],
+  cable_length: ["Lunghezza del cavo", "Kabellänge", "Longueur du câble", "Longitud del cable"],
+  wire_gauge: ["Sezione del filo (AWG)", "Leiterquerschnitt (AWG)", "Section du fil (AWG)", "Calibre del cable (AWG)"],
+  material: ["Materiale", "Material", "Matériau", "Material"],
+  pcb_thickness: ["Spessore del PCB", "Leiterplattendicke", "Épaisseur du PCB", "Espesor del PCB"],
+  copper_thickness: ["Spessore del rame", "Kupferdicke", "Épaisseur de cuivre", "Espesor del cobre"],
+  certifications: ["Certificazioni", "Zertifizierungen", "Certifications", "Certificaciones"],
+  rohs: ["RoHS / REACH", "RoHS / REACH", "RoHS / REACH", "RoHS / REACH"],
+  manufacturer: ["Produttore / marchio", "Hersteller / Marke", "Fabricant / marque", "Fabricante / marca"],
+  part_number: ["Codice articolo", "Teilenummer", "Référence", "Número de pieza"],
+  warranty: ["Garanzia", "Garantie", "Garantie", "Garantía"],
+  other: ["Altro", "Sonstiges", "Autre", "Otro"],
+};
+
+const COMPONENT_LABELS: Record<string, [it: string, de: string, fr: string, es: string]> = {
+  "Output capacitor": ["Condensatore di uscita", "Ausgangskondensator", "Condensateur de sortie", "Condensador de salida"],
+  "Input capacitor": ["Condensatore di ingresso", "Eingangskondensator", "Condensateur d'entrée", "Condensador de entrada"],
+  "Electrolytic capacitor": ["Condensatore elettrolitico", "Elektrolytkondensator", "Condensateur électrolytique", "Condensador electrolítico"],
+  Transformer: ["Trasformatore", "Transformator", "Transformateur", "Transformador"],
+  Fuse: ["Fusibile", "Sicherung", "Fusible", "Fusible"],
+  MOSFET: ["MOSFET", "MOSFET", "MOSFET", "MOSFET"],
+  Cable: ["Cavo", "Kabel", "Câble", "Cable"],
+  Housing: ["Involucro", "Gehäuse", "Boîtier", "Carcasa"],
+};
+const LANG_COL = { it: 0, de: 1, fr: 2, es: 3 } as const;
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** Sub-parts a value can belong to (the capacitor inside a power supply). English is canonical. */
 export const COMPONENTS: { en: string; zh: string; re: RegExp }[] = [
   { en: "Output capacitor", zh: "输出电容", re: /output\s+(?:electrolytic\s+)?capacitor|输出(?:端)?(?:滤波)?(?:电解)?电容/i },
@@ -85,7 +155,25 @@ export const COMPONENTS: { en: string; zh: string; re: RegExp }[] = [
   { en: "MOSFET", zh: "MOS管", re: /mosfet|mos管/i },
   { en: "Cable", zh: "线材", re: /\bcable\b|线材|电源线/i },
   { en: "Housing", zh: "外壳", re: /housing|enclosure|外壳/i },
-];
+].map((c) => ({ ...c, re: new RegExp(`${c.re.source}|${(COMPONENT_LABELS[c.en] ?? []).filter((l) => l !== c.en).map(esc).join("|") || "(?!)"}`, "i") }));
+
+/** A parameter or sub-part name in the user's language (English for languages without their own table). */
+export function paramLabel(key: ParamKey, lang: string): string {
+  const col = LANG_COL[lang as keyof typeof LANG_COL];
+  return col === undefined ? PARAMS[key].en : PARAM_LABELS[key][col];
+}
+export function componentLabel(en: string, lang: string): string {
+  const col = LANG_COL[lang as keyof typeof LANG_COL];
+  return col === undefined ? en : COMPONENT_LABELS[en]?.[col] ?? en;
+}
+/** Glossary entries (term in the user's language ↔ 中文), longest first, for the rule translator. */
+export function termsFor(lang: string): { term: string; zh: string }[] {
+  const out = [
+    ...(Object.keys(PARAMS) as ParamKey[]).filter((k) => k !== "other").map((k) => ({ term: paramLabel(k, lang), zh: PARAMS[k].zh })),
+    ...COMPONENTS.map((c) => ({ term: componentLabel(c.en, lang), zh: c.zh })),
+  ];
+  return out.sort((a, b) => b.zh.length - a.zh.length);
+}
 
 /** Locked glossary EN ↔ 中文: used in the prompt (the model must use these), the Glossary sheet and the rule fallback. */
 export const TERMS: { en: string; zh: string; note?: string }[] = [
@@ -153,13 +241,47 @@ export const KEYWORDS: [RegExp, ParamKey][] = [
   [/capacitance|电容量|容量/i, "capacitance"], [/resistance|阻值|电阻值/i, "resistance"], [/inductance|电感量|感量/i, "inductance"],
   [/rated\s+voltage|额定电压/i, "rated_voltage"], [/rated\s+current|额定电流/i, "rated_current"], [/rated\s+power|额定功率/i, "rated_power"],
   [/temp(?:erature)?\s+rating|耐温|温度等级/i, "temp_rating"], [/noise\s+level|acoustic|噪音/i, "noise_level"],
+  // the same names in it · de · fr · es, longest first ("Resistenza di isolamento" before "Resistenza")
+  ...(Object.entries(PARAM_LABELS) as [ParamKey, string[]][])
+    .flatMap(([key, labels]) => labels.filter((l) => key !== "other" && l !== PARAMS[key].en && l.length > 3).map((l) => [l.replace(/\s*\(.*\)$/, ""), key] as const))
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([l, key]): [RegExp, ParamKey] => [new RegExp(esc(l), "i"), key]),
 ];
 
-/** Polite or vague words that weaken a technical claim (shown as notes; the sheet asks for a firm value). */
-export const SOFT_CLAIMS: { re: RegExp; en: string; risk: "low" | "medium" | "high" }[] = [
-  { re: /参数一样|参数相同|规格一样|完全一样|一模一样/, en: "\"Same parameters\" — a claim, not a datasheet. Check every value of the new part.", risk: "high" },
-  { re: /国产(?:替代|的)?|换成|替换|替代料|代替|改用/, en: "The supplier changed a part (substitute / domestic equivalent). Ask for its datasheet and approve it before production.", risk: "high" },
-  { re: /典型值|typ\.?\b|typical/i, en: "\"Typical\" value — not guaranteed. Ask for the minimum / maximum.", risk: "medium" },
-  { re: /左右|大约|约\s*\d|差不多|approx/i, en: "\"About\" — not a firm value. Ask for a guaranteed limit.", risk: "medium" },
-  { re: /问题不大|没问题|应该可以|应该没问题/, en: "\"Should be fine\" — not a commitment. Get the value in writing.", risk: "medium" },
+/** Polite or vague words that weaken a technical claim (shown as notes in the user's language; the sheet asks for a firm value). */
+export const SOFT_CLAIMS: { re: RegExp; risk: "low" | "medium" | "high"; en: string; it: string; de: string; fr: string; es: string }[] = [
+  { re: /参数一样|参数相同|规格一样|完全一样|一模一样/, risk: "high",
+    en: "\"Same parameters\" — a claim, not a datasheet. Check every value of the new part.",
+    it: "\"Stessi parametri\": è un'affermazione, non una scheda tecnica. Verifica ogni valore del nuovo componente.",
+    de: "„Gleiche Parameter“ ist eine Behauptung, kein Datenblatt. Prüfen Sie jeden Wert des neuen Bauteils.",
+    fr: "« Mêmes paramètres » : une affirmation, pas une fiche technique. Vérifiez chaque valeur de la nouvelle pièce.",
+    es: "\"Mismos parámetros\": es una afirmación, no una hoja de datos. Compruebe cada valor de la nueva pieza." },
+  { re: /国产(?:替代|的)?|换成|替换|替代料|代替|改用/, risk: "high",
+    en: "The supplier changed a part (substitute / domestic equivalent). Ask for its datasheet and approve it before production.",
+    it: "Il fornitore ha cambiato un componente (sostituto / equivalente cinese). Chiedi la scheda tecnica e approvalo prima della produzione.",
+    de: "Der Lieferant hat ein Bauteil ersetzt (Ersatzteil / chinesisches Äquivalent). Datenblatt anfordern und vor der Produktion freigeben.",
+    fr: "Le fournisseur a changé une pièce (substitut / équivalent chinois). Demandez sa fiche technique et validez-la avant la production.",
+    es: "El proveedor cambió una pieza (sustituto / equivalente chino). Pida su hoja de datos y apruébela antes de producir." },
+  { re: /典型值|typ\.?\b|typical/i, risk: "medium",
+    en: "\"Typical\" value — not guaranteed. Ask for the minimum / maximum.",
+    it: "Valore \"tipico\": non garantito. Chiedi il minimo / massimo.",
+    de: "„Typischer“ Wert: nicht garantiert. Fragen Sie nach Minimum / Maximum.",
+    fr: "Valeur « typique » : non garantie. Demandez le minimum / maximum.",
+    es: "Valor \"típico\": no garantizado. Pida el mínimo / máximo." },
+  { re: /左右|大约|约\s*\d|差不多|approx/i, risk: "medium",
+    en: "\"About\" — not a firm value. Ask for a guaranteed limit.",
+    it: "\"Circa\": non è un valore certo. Chiedi un limite garantito.",
+    de: "„Ungefähr“: kein fester Wert. Fragen Sie nach einem garantierten Grenzwert.",
+    fr: "« Environ » : pas une valeur ferme. Demandez une limite garantie.",
+    es: "\"Aproximadamente\": no es un valor firme. Pida un límite garantizado." },
+  { re: /问题不大|没问题|应该可以|应该没问题/, risk: "medium",
+    en: "\"Should be fine\" — not a commitment. Get the value in writing.",
+    it: "\"Non dovrebbe essere un problema\": non è un impegno. Fatti dare il valore per iscritto.",
+    de: "„Sollte passen“ ist keine Zusage. Lassen Sie sich den Wert schriftlich geben.",
+    fr: "« Ça devrait aller » n'est pas un engagement. Obtenez la valeur par écrit.",
+    es: "\"No debería haber problema\" no es un compromiso. Pida el valor por escrito." },
 ];
+
+/** A note says a part was swapped or claimed "the same", whatever language the note itself is in. */
+export const isPartChangeNote = (n: { text_en: string; quote: string }) =>
+  /substitut|domestic|changed a part|same parameters/i.test(n.text_en) || SOFT_CLAIMS[0].re.test(n.quote) || SOFT_CLAIMS[1].re.test(n.quote);

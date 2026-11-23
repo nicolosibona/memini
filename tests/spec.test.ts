@@ -176,3 +176,61 @@ describe("rejected AI key", async () => {
     expect(isAuthError("Failed to parse structured output")).toBe(false);
   });
 });
+
+describe("the user's language (set on the web app)", async () => {
+  const { workspaceLang, setWorkspaceLang, FULL_LANGS } = await import("@/lib/core/lang");
+  const { glossaryTranslate, ruleRead } = await import("@/lib/core/spec/extract");
+  const { specWelcome } = await import("@/lib/core/spec/flow");
+  const db = openDb(":memory:");
+  await resetDemo(db, { profile: "electronics" });
+  const ws = (db.prepare(`SELECT workspace_id AS w FROM users WHERE id = ?`).get(DEMO_USER) as { w: string }).w;
+  const send = (items: Item[]) => handleIncoming({ userId: DEMO_USER, channel: "sim", items }, db);
+
+  it("the bot greets in it and offers no language menu (the choice is on the web)", async () => {
+    setWorkspaceLang(db, ws, "it");
+    const [w] = await send([{ kind: "text", text: "ciao" }]);
+    expect(w.kind).toBe("text");
+    expect(w.text).toContain("tra italiano e cinese");
+    expect(w.text).toContain("Impostazioni nel sito");
+    expect(w.text).not.toContain("/lang");
+    const [cmd] = await send([{ kind: "text", text: "/lang de" }]);
+    expect(workspaceLang(db, ws)).toBe("it");
+    expect(cmd.text ?? "").not.toContain("Deutsch");
+    for (const l of FULL_LANGS) expect(Buffer.byteLength(specWelcome(l).text), l).toBeLessThanOrEqual(900);
+  });
+
+  it("the check, the bot replies and the sheet follow it; the supplier still gets Chinese", async () => {
+    await send([{ kind: "text", text: "Temperatura di esercizio: -20 ~ +70 °C\nRipple e rumore: ≤ 120 mV" }]);
+    const [r] = await send([{ kind: "text", text: SPEC_DEMO_TEXTS.reply }]);
+    expect(r.text).toContain("🇮🇹");
+    expect(r.text).toContain("Temperatura di esercizio: tu -20 ~ +70 °C → fornitore -10℃～+50℃");
+    expect(r.text).toMatch(/Finora: 🔴 2/);
+    expect(r.prompt).toContain("foglio di verifica");
+    const replies = await send([{ kind: "text", text: "excel" }]);
+    expect(replies[0].text).toContain("🔴 2 NON CONFORMI");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(replies[1].file!.path);
+    const sheet = wb.worksheets[0];
+    expect(sheet.name).toBe("核对表 Verifica");
+    expect(String(sheet.getRow(4).getCell(2).value)).toBe("参数 Parametro");
+    const labels: string[] = [];
+    sheet.eachRow((row) => labels.push(String(row.getCell(2).value ?? "")));
+    expect(labels).toContain("纹波噪声 Ripple e rumore");
+    expect(replies[2].copy!.text).toContain("纹波噪声：我方要求 ≤ 120 mV");
+  });
+
+  it("languages without their own table: the bot stays in English", async () => {
+    setWorkspaceLang(db, ws, "pt");
+    const [w] = await send([{ kind: "text", text: "hello" }]);
+    expect(w.text).toContain("between Português and Chinese");
+  });
+
+  it("rule translation, rule reading and the translation check work in the user's language", () => {
+    expect(glossaryTranslate("输出电压：12V", false, "it")).toContain("Tensione di uscita");
+    expect(glossaryTranslate("Tensione di uscita: 12 V", true, "it")).toContain("输出电压");
+    expect(ruleRead("Betriebstemperatur: -20 ~ +70 °C", { lang: "de" }).parameters.map((p) => p.key)).toContain("operating_temp");
+    expect(ruleRead("参数一样", { lang: "fr" }).notes[0].text_en).toContain("Mêmes paramètres");
+    expect(checkTranslation("效率不低于88%", "Efficienza almeno 88%").ok).toBe(true);
+    expect(checkTranslation("效率不低于88%", "Wirkungsgrad höchstens 88%").flipped.length).toBe(1);
+  });
+});

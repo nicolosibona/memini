@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  🏆 <b>Hackathon winner</b> · November 2026 &nbsp;·&nbsp;
+  🏆 <b>Hackathon winner</b> · built in 12 hours · November 2026 &nbsp;·&nbsp;
   <a href="docs/memini-pitch-deck.pdf">Pitch deck (PDF)</a> &nbsp;·&nbsp;
   <a href="#run-it-locally">Run it locally</a>
 </p>
@@ -17,7 +17,7 @@
 > [!NOTE]
 > **Status: hackathon project, no longer deployed.** The AI API keys we used during the event have expired and the demo
 > server is offline. Everything still runs locally **without any key**: rule-based readers and saved answers stand in
-> for the AI, and all 129 tests pass offline. To turn on live AI, add your own Anthropic key ([below](#live-ai)).
+> for the AI, and all 133 tests pass offline. To turn on live AI, add your own Anthropic key ([below](#live-ai)).
 
 ## The problem
 
@@ -41,13 +41,26 @@ talk to suppliers. Nothing to install.
 </p>
 
 1. **Forward** your spec and whatever the supplier sends (chat messages, PDF datasheets, photos).
-2. **Translate**: every technical line, through a locked EN ⇄ 中文 glossary. One term, always the same.
+2. **Translate**: every technical line between **your language** and Chinese, through a locked glossary. One term, always the same.
 3. **Check**: every parameter against your spec. 🔴 mismatch · 🟡 to confirm · ⚠️ not stated · ✅ OK. Swapped
    parts ("我们换成国产的了，参数一样": *we switched to a domestic part, same parameters*) are flagged.
-4. **Reply**: write `excel` and you get a bilingual `.xlsx` verification sheet plus a Chinese message for the
-   supplier, ready to forward. The supplier fills in and confirms each line.
+4. **Reply**: write `excel` and you get a bilingual `.xlsx` verification sheet (your language + 中文) plus a Chinese
+   message for the supplier, ready to forward. The supplier fills in and confirms each line.
 
 The same memory is in the web app: everything you forward on WeChat shows up there, and the web chat works the same way.
+
+### Your language ⇄ 中文
+
+You pick your language once on the web app (the chip on **Today**, or **Settings**), and the WeChat bot follows it.
+The supplier always gets Chinese.
+
+| | Translations | Bot messages, parameter names, verification sheet |
+|---|---|---|
+| English, Italiano, Deutsch, Français, Español | ✅ | ✅ in your language: the locked glossary has all 52 parameters in each |
+| Português, Nederlands, Polski, Svenska, Čeština, Română, Türkçe, Русский, 日本語, 한국어, Tiếng Việt | ✅ by the AI | English |
+
+Limit words are checked in every full language: a translation that turns 不低于 ("at least") into *höchstens* or
+*al massimo* is flagged.
 
 <p align="center">
   <img src="docs/images/web-spec-check.jpg" alt="The Memini web app: the buyer's requirements checked against the supplier's answer, with a copy-ready Chinese message" width="820">
@@ -64,7 +77,7 @@ with the exact quote it came from. Everything that decides is plain, tested code
 
 | Step | How | Where |
 |---|---|---|
-| Read + translate | One model call per item (PDF, photo or chat), with the locked glossary in the prompt. Without a model: a rule reader (glossary + unit parser) | [`lib/core/spec/extract.ts`](lib/core/spec/extract.ts) |
+| Read + translate | One model call per item (PDF, photo or chat), with the locked glossary in the user's language in the prompt. Without a model: a rule reader (glossary + unit parser) | [`lib/core/spec/extract.ts`](lib/core/spec/extract.ts) |
 | Translation check | Every number, unit, limit sign (≥ ≤ ~ ±) and part number in the original must survive in the translation, or the line is flagged | [`lib/core/spec/quantity.ts`](lib/core/spec/quantity.ts) |
 | Normalize | `150mVp-p`, `0.15 V`, `1000UF`, `16伏`, `-10℃～+50℃` → SI values and ranges | [`lib/core/spec/quantity.ts`](lib/core/spec/quantity.ts) |
 | Compare | 52 parameters, each with a fixed rule: `min`, `max`, `covers` (a range must cover yours), `includes` (sets such as certifications), `eq` | [`lib/core/spec/params.ts`](lib/core/spec/params.ts), [`compare.ts`](lib/core/spec/compare.ts) |
@@ -93,7 +106,7 @@ supplier quietly swaps the output capacitor:
 Requires **Node.js 22**. No API key, no WeChat account needed.
 
 ```bash
-git clone https://github.com/nikcccc/memini.git
+git clone https://github.com/nicolosibona/memini.git
 cd memini
 npm install
 cp .env.example .env.local      # LLM_PROVIDER=mock, MEMINI_PROFILE=electronics
@@ -113,7 +126,7 @@ Hi Wang, for PS-1205 we need: ripple ≤ 120 mV, efficiency ≥ 88%, operating t
 **Spec checks** lists every check with its table and sheet. **Settings** switches the workspace profile and resets the demo data.
 
 ```bash
-npm test             # 129 unit + end-to-end tests, offline, no AI
+npm test             # 133 unit + end-to-end tests, offline, no AI
 npm run lint
 npm run build
 ```
@@ -199,4 +212,4 @@ technical file** per product, kept up to date from what suppliers send.
 
 ## Team
 
-Built in a few days at a hackathon in November 2026 by **Nicolò Sibona**, **Alessandro Giostra**, **Uros Bikic** and **Marco Maiorino**.
+Built in **12 hours** at a hackathon in November 2026 by **Nicolò Sibona**, **Alessandro Giostra**, **Uros Bikic** and **Marco Maiorino**.

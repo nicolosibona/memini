@@ -6,29 +6,37 @@ import path from "node:path";
 import { callJSON } from "@/lib/adapters/llm";
 import { htmlToText, mimeOf, originalFileName } from "../extract";
 import { isChinese } from "../normalize";
-import { COMPONENTS, KEYWORDS, PARAMS, PARAM_KEYS, SOFT_CLAIMS, TERMS, type ParamKey } from "./params";
+import { COMPONENTS, KEYWORDS, PARAMS, PARAM_KEYS, SOFT_CLAIMS, TERMS, termsFor, type ParamKey } from "./params";
+import { LANGS, uiLang, type Lang } from "../lang";
 import { parseQty, parseRange } from "./quantity";
 import { SpecChatSchema, SpecExtractionSchema, type SpecChat, type SpecExtraction, type SpecParamOut } from "./schema";
 
-const GLOSSARY = TERMS.map((t) => `${t.en} = ${t.zh}`).join("\n");
+/** The locked glossary for the prompt: Chinese = the user's language (English names for languages without a table). */
+function glossary(lang: Lang): string {
+  if (lang === "en" || !LANGS[lang].full) return TERMS.map((t) => `${t.en} = ${t.zh}`).join("\n");
+  return termsFor(lang).map((t) => `${t.term} = ${t.zh}`).join("\n");
+}
+const langName = (l: Lang) => (l === "en" ? "English" : `${LANGS[l].name} (${LANGS[l].native})`);
+const direction = (l: Lang) => `Chinese → ${langName(l)}; ${l === "en" ? "English or any other language" : `${langName(l)}, English or any other language`} → Simplified Chinese`;
 
-const SYSTEM = `You are a bilingual (English / Simplified Chinese) electronics engineer checking parts bought from Chinese manufacturers. A buyer forwards you items one by one: their own specification or requirements, and the supplier's datasheets (规格书), quotations, test reports, BOMs and WeChat messages.
+const SYSTEM = (lang: Lang) => `You are a bilingual (${langName(lang)} / Simplified Chinese) electronics engineer checking parts bought from Chinese manufacturers. A buyer forwards you items one by one: their own specification or requirements, and the supplier's datasheets (规格书), quotations, test reports, BOMs and WeChat messages.
 
 For the item you get, return ONE JSON object:
-- role: "requirement" if it is the buyer's own spec/request (usually English or Italian, "shall", "required", "min."), "supplier" if it comes from the manufacturer (usually Chinese: 规格书, 报价, 测试报告, a chat from 王工/销售). Use the hint about who sent it.
-- segments: the technical content line by line, in order, each with a faithful translation (Chinese → English; English/Italian → Simplified Chinese). This translation goes to engineers: keep EVERY number, unit, limit sign (≥ ≤ ~ ±), condition (满载, 25℃, typ.) and part number exactly as written. Never round, never convert units, never drop a limit word (不低于 = at least, 不超过 = at most, 典型值 = typical). Use these locked term translations exactly:
-${GLOSSARY}
+- role: "requirement" if it is the buyer's own spec/request (usually ${langName(lang)} or English, "shall", "required", "min."), "supplier" if it comes from the manufacturer (usually Chinese: 规格书, 报价, 测试报告, a chat from 王工/销售). Use the hint about who sent it.
+- segments: the technical content line by line, in order, each with a faithful translation (${direction(lang)}). This translation goes to engineers: keep EVERY number, unit, limit sign (≥ ≤ ~ ±), condition (满载, 25℃, typ.) and part number exactly as written. Never round, never convert units, never drop a limit word (不低于 = at least, 不超过 = at most, 典型值 = typical). Use these locked term translations exactly${lang !== "en" && !LANGS[lang].full ? ` (render the English term in ${langName(lang)} the same way every time)` : ""}:
+${glossary(lang)}
 - parameters: every technical value, with key from the allowed list (use "other" only if nothing fits, keeping the label). If one line holds several values of a sub-part ("输出电容：1000μF/16V 105℃"), return one parameter per value with component = the sub-part in English ("Output capacitor") and the matching key (capacitance, rated_voltage, temp_rating). op: min for ≥/不低于/at least/min., max for ≤/不超过/at most/max., range for from–to, typ for typical/典型值, eq for a plain value, text for words. num/num_max/unit as written. quote = the exact source text.
   Sets (protections, certifications) go in ONE parameter with the items in value.
-- notes: claims that need care — a part substituted or called "equivalent"/"参数一样", domestic substitutes (国产替代), typical-only values, vague words (左右, 约, 问题不大), values that depend on a condition.
+- notes: written in ${langName(lang)} (the field is called text_en for historical reasons), claims that need care — a part substituted or called "equivalent"/"参数一样", domestic substitutes (国产替代), typical-only values, vague words (左右, 约, 问题不大), values that depend on a condition.
 Never invent a value that is not in the item. Unreadable → leave it out.`;
 
-const CHAT_SYSTEM = `You are a bilingual (English / Simplified Chinese) electronics engineer. A buyer forwards you one WeChat message from a conversation with a Chinese manufacturer: either the buyer's own message (usually English/Italian) or the supplier's (usually Chinese).
-Return ONE short JSON object: role, language, a faithful translation of the whole message (keep every number, unit, sign ≥ ≤ ~ and part number exactly; 不低于 = at least, 不超过 = at most, 典型值 = typical), and every technical value as {key, component, value, op}. Several values of one sub-part ("输出电容 1000μF 16V 85℃") → one entry each with component "Output capacitor" and keys capacitance / rated_voltage / temp_rating. Sets (certifications, protections) → one entry. Use these locked terms in translations:
-${GLOSSARY}
+const CHAT_SYSTEM = (lang: Lang) => `You are a bilingual (${langName(lang)} / Simplified Chinese) electronics engineer. A buyer forwards you one WeChat message from a conversation with a Chinese manufacturer: either the buyer's own message (usually ${langName(lang)} or English) or the supplier's (usually Chinese).
+Return ONE short JSON object: role, language, a faithful translation of the whole message (${direction(lang)}) (keep every number, unit, sign ≥ ≤ ~ and part number exactly; 不低于 = at least, 不超过 = at most, 典型值 = typical), and every technical value as {key, component, value, op}. Several values of one sub-part ("输出电容 1000μF 16V 85℃") → one entry each with component "Output capacitor" and keys capacitance / rated_voltage / temp_rating. Sets (certifications, protections) → one entry. Notes in ${langName(lang)}. Use these locked terms in translations:
+${glossary(lang)}
 Be brief. Never invent values.`;
 
-export type ItemInput = { text?: string | null; filePath?: string | null; author?: string | null; hint?: string };
+/** `lang`: the user's language (what Chinese is translated into). Default English. */
+export type ItemInput = { text?: string | null; filePath?: string | null; author?: string | null; hint?: string; lang?: Lang };
 
 export async function readSpecItem(item: ItemInput): Promise<{ data: SpecExtraction; source: string }> {
   const name = item.filePath ? originalFileName(item.filePath) : null;
@@ -40,8 +48,9 @@ export async function readSpecItem(item: ItemInput): Promise<{ data: SpecExtract
   }
   const who = item.author ? `Forwarded chat message written by "${item.author}".` : item.filePath ? `A file forwarded by the buyer: ${name}.` : "A text message the buyer typed or forwarded.";
   const intro = `${who}${item.hint ? ` ${item.hint}` : ""}`;
-  const fallback = () => ruleRead(text || demoSourceText(name) || "", { author: item.author, name });
-  const base = { step: "spec" as const, system: SYSTEM, schema: SpecExtractionSchema, fallback, timeoutMs: Number(process.env.LLM_TIMEOUT_SPEC_MS ?? 90000) };
+  const lang = item.lang ?? "en";
+  const fallback = () => ruleRead(text || demoSourceText(name) || "", { author: item.author, name, lang });
+  const base = { step: "spec" as const, system: SYSTEM(lang), schema: SpecExtractionSchema, fallback, timeoutMs: Number(process.env.LLM_TIMEOUT_SPEC_MS ?? 90000) };
   let r;
   if (item.filePath && mime.startsWith("image/")) {
     r = await callJSON({ ...base, text: intro, imageDataUrls: [`data:${mime};base64,${fs.readFileSync(item.filePath).toString("base64")}`] });
@@ -50,7 +59,7 @@ export async function readSpecItem(item: ItemInput): Promise<{ data: SpecExtract
   } else if (!item.filePath && text.length < 1500) {
     // a chat message: small fast model + slim output — the reply must feel instant on WeChat; rules if it's late
     const c = await callJSON({
-      step: "spec_chat", system: CHAT_SYSTEM, schema: SpecChatSchema, text: `${intro}\n\nMessage:\n${text}`,
+      step: "spec_chat", system: CHAT_SYSTEM(lang), schema: SpecChatSchema, text: `${intro}\n\nMessage:\n${text}`,
       timeoutMs: Number(process.env.LLM_TIMEOUT_SPEC_CHAT_MS ?? 12000), fallback: () => null as unknown as SpecChat,
     });
     if (!c.data) return { data: tidy(fallback()), source: "fallback" };
@@ -94,13 +103,16 @@ const TERMS_ZH = [...TERMS].sort((a, b) => b.zh.length - a.zh.length);
 const TERMS_EN = [...TERMS].sort((a, b) => b.en.length - a.en.length);
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Term-by-term translation with the locked glossary: rough, but it can never change a number. */
-export function glossaryTranslate(line: string, toZh: boolean): string {
+/** Term-by-term translation with the locked glossary: rough, but it can never change a number.
+ *  `lang`: the user's language — Chinese goes into it, and its terms (plus English ones) go into Chinese. */
+export function glossaryTranslate(line: string, toZh: boolean, lang: Lang = "en"): string {
   let out = line;
+  const own = uiLang(lang) === "en" ? [] : termsFor(uiLang(lang)).map((t) => ({ en: t.term, zh: t.zh })).sort((a, b) => b.en.length - a.en.length);
   if (toZh) {
-    for (const t of TERMS_EN) out = out.replace(new RegExp(`\\b${esc(t.en.replace(/\s*\(.*\)$/, ""))}\\b`, "gi"), t.zh);
+    for (const t of [...own, ...TERMS_EN]) out = out.replace(new RegExp(`(?<![\\p{L}])${esc(t.en.replace(/\s*\(.*\)$/, ""))}(?![\\p{L}])`, "giu"), t.zh);
     return out.replace(/:\s*/g, "：").replace(/\bto\b/g, "~").replace(/\band\b/gi, "和");
   }
+  for (const t of own.length ? [...own].sort((a, b) => b.zh.length - a.zh.length) : []) out = out.split(t.zh).join(` ${t.en.replace(/\s*\(.*\)$/, "")} `);
   for (const t of TERMS_ZH) out = out.split(t.zh).join(` ${t.en.replace(/\s*\(.*\)$/, "")} `);
   return out.replace(/：/g, ": ").replace(/，/g, ", ").replace(/、/g, ", ").replace(/。/g, ". ").replace(/（/g, " (").replace(/）/g, ") ").replace(/～/g, " ~ ").replace(/\s{2,}/g, " ").trim();
 }
@@ -166,7 +178,8 @@ function proseParams(line: string): SpecParamOut[] {
   return out;
 }
 
-export function ruleRead(text: string, ctx: { author?: string | null; name?: string | null } = {}): SpecExtraction {
+export function ruleRead(text: string, ctx: { author?: string | null; name?: string | null; lang?: Lang } = {}): SpecExtraction {
+  const lang = ctx.lang ?? "en";
   const zh = isChinese(text);
   const lines = text.split(/\n+/).map((l) => l.replace(/^\s*(?:\d{1,2}[.)、]|\d{1,2}\s+(?=[A-Za-z一-鿿])|[-•*])\s*/, "").trim()).filter((l) => l.length > 1);
   const parameters: SpecParamOut[] = [];
@@ -174,8 +187,8 @@ export function ruleRead(text: string, ctx: { author?: string | null; name?: str
   const notes: SpecExtraction["notes"] = [];
   for (const line of lines) {
     const toZh = !/[一-鿿]/.test(line); // any Chinese in the line → it is the supplier's, translate to English
-    segments.push({ original: line, translation: glossaryTranslate(line, toZh) });
-    for (const s of SOFT_CLAIMS) { const m = line.match(s.re); if (m) notes.push({ text_en: s.en, quote: m[0], risk: s.risk }); }
+    segments.push({ original: line, translation: glossaryTranslate(line, toZh, lang) });
+    for (const s of SOFT_CLAIMS) { const m = line.match(s.re); if (m) notes.push({ text_en: s[uiLang(lang)], quote: m[0], risk: s.risk }); }
     // "Label: value", or a table row flattened to "标签 值" (label first, value after the first space)
     let colon = line.search(/[:：]/);
     if (colon < 0) {

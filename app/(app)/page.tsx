@@ -16,6 +16,8 @@ import { AmbientField } from "@/components/ambient/AmbientField";
 import { Mist, Silk } from "@/components/ambient/Stage";
 import { Card, CardHead, BracketLink, Dot, Empty, ago } from "@/components/ui";
 import { Icon } from "@/components/Icon";
+import { LanguagePicker } from "@/components/LanguagePicker";
+import { langOptions, workspaceLang } from "@/lib/core/lang";
 
 export const dynamic = "force-dynamic";
 
@@ -90,9 +92,7 @@ export default async function TodayPage() {
         <>
           {electronics && (
             <>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-card/70 px-2.5 h-6 text-[12px] text-ink-2">
-                <span className="size-1.5 rounded-full bg-brand" />Electronics spec check · EN ⇄ 中文
-              </span>
+              <LanguagePicker value={workspaceLang(db, CURRENT_WS)} options={langOptions()} />
               <span className="text-faint">·</span>
             </>
           )}

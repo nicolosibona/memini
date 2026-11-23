@@ -20,7 +20,7 @@ export type SpecParamOut = z.infer<typeof SpecParamSchema>;
 export const SpecExtractionSchema = z.object({
   role: z.enum(["requirement", "supplier", "unclear"]).describe("requirement = the buyer's own specification, drawing or request; supplier = the manufacturer's datasheet, quotation, test report, sample report or chat message"),
   doc_kind: z.enum(["spec", "datasheet", "quotation", "test_report", "bom", "chat", "other"]),
-  language: z.enum(["zh", "en", "it", "mixed", "other"]),
+  language: z.enum(["zh", "en", "it", "de", "fr", "es", "mixed", "other"]),
   title: z.string().describe("Short title, e.g. 'Supplier datasheet PS-1205' or 'Our requirements – 12 V 5 A PSU'"),
   summary_en: z.string().describe("One English sentence: what this is"),
   part_name: z.string().nullable().describe("The product or part in English, e.g. '12 V 5 A switching power supply'"),
@@ -28,7 +28,7 @@ export const SpecExtractionSchema = z.object({
   supplier_name: z.string().nullable().describe("The manufacturer's company name if printed"),
   segments: z.array(z.object({
     original: z.string().describe("One technical line or sentence, exactly as written"),
-    translation: z.string().describe("Its translation: into English if the original is Chinese, into Simplified Chinese if the original is English/Italian. Keep every number, unit, sign (≥ ≤ ~) and part number exactly"),
+    translation: z.string().describe("Its translation: into the user's language (see the instructions) if the original is Chinese, otherwise into Simplified Chinese. Keep every number, unit, sign (≥ ≤ ~) and part number exactly"),
   })).describe("The technical content line by line, in order (at most 40 lines; skip logos, addresses and boilerplate)"),
   parameters: z.array(SpecParamSchema),
   notes: z.array(z.object({ text_en: z.string(), quote: z.string(), risk: z.enum(["low", "medium", "high"]) }))
@@ -40,8 +40,8 @@ export type SpecExtraction = z.infer<typeof SpecExtractionSchema>;
  *  Values keep their unit and sign in `value`; the comparison parses them itself. */
 export const SpecChatSchema = z.object({
   role: z.enum(["requirement", "supplier", "unclear"]).describe("requirement = the buyer asking/specifying; supplier = the manufacturer answering"),
-  language: z.enum(["zh", "en", "it", "mixed", "other"]),
-  translation: z.string().describe("The whole message translated (Chinese → English; English/Italian → Simplified Chinese), every number, unit, sign and part number kept exactly"),
+  language: z.enum(["zh", "en", "it", "de", "fr", "es", "mixed", "other"]),
+  translation: z.string().describe("The whole message translated (Chinese → the user's language from the instructions; anything else → Simplified Chinese), every number, unit, sign and part number kept exactly"),
   part_name: z.string().nullable(),
   part_number: z.string().nullable(),
   parameters: z.array(z.object({

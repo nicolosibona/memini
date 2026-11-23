@@ -78,10 +78,11 @@ export function parseRange(text: string, defaultDim: Dim = null): { lo: Qty; hi:
 }
 
 // ── comparison words in front of / after a number (for the translation check) ──
-const GE = /(≥|>=|＞=|不低于|不小于|不少于|至少|最低|min(?:imum)?\.?|at\s+least|not\s+less\s+than|no\s+less\s+than|>\s*|大于)\s*$/i;
-const LE = /(≤|<=|＜=|不高于|不大于|不超过|最高|最大|max(?:imum)?\.?|up\s+to|at\s+most|not\s+more\s+than|no\s+more\s+than|below|under|<\s*|小于|低于)\s*$/i;
-const GE_AFTER = /^\s*[a-zA-Zµμ°℃%Ω伏安瓦法欧赫摄度]*\s*(以上|及以上|or\s+more|minimum|min\b)/i;
-const LE_AFTER = /^\s*[a-zA-Zµμ°℃%Ω伏安瓦法欧赫摄度]*\s*(以下|以内|及以下|or\s+less|maximum|max\b)/i;
+// limit words in English, Italian, German, French and Spanish too: a translation must keep them
+const GE = /(≥|>=|＞=|不低于|不小于|不少于|至少|最低|min(?:imum)?\.?|at\s+least|not\s+less\s+than|no\s+less\s+than|almeno|non\s+inferiore\s+a|minimo|mindestens|nicht\s+weniger\s+als|au\s+moins|au\s+minimum|pas\s+moins\s+de|al\s+menos|como\s+m[ií]nimo|no\s+menos\s+de|m[ií]nimo|>\s*|大于)\s*$/i;
+const LE = /(≤|<=|＜=|不高于|不大于|不超过|最高|最大|max(?:imum)?\.?|up\s+to|at\s+most|not\s+more\s+than|no\s+more\s+than|below|under|al\s+massimo|massimo|fino\s+a|non\s+superiore\s+a|non\s+pi[uù]\s+di|h[öo]chstens|maximal|bis\s+zu|nicht\s+mehr\s+als|au\s+plus|au\s+maximum|jusqu'?\s*[àa]|pas\s+plus\s+de|como\s+m[áa]ximo|hasta|no\s+m[áa]s\s+de|m[áa]ximo|<\s*|小于|低于)\s*$/i;
+const GE_AFTER = /^\s*[a-zA-Zµμ°℃%Ω伏安瓦法欧赫摄度]*\s*(以上|及以上|or\s+more|minimum|min\b|o\s+pi[uù]|oder\s+mehr|ou\s+plus|o\s+m[áa]s)/i;
+const LE_AFTER = /^\s*[a-zA-Zµμ°℃%Ω伏安瓦法欧赫摄度]*\s*(以下|以内|及以下|or\s+less|maximum|max\b|o\s+meno|oder\s+weniger|ou\s+moins|o\s+menos)/i;
 
 export type Token = { raw: string; sig: string; op: "≥" | "≤" | null };
 /** Every number(+unit) and every part number / standard in a text, as comparable signatures. */
