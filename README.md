@@ -4,7 +4,7 @@ Bilingual assistant for foreigners doing business in China — a web app + a WeC
 It started as a sourcing tool (suppliers, quotes, proformas) and is now generic: **contacts, matters, documents, facts, deadlines, checks**,
 scoped by a workspace **profile** ("Sourcing buyer" or "Doing business in China").
 
-See the [product blueprint](memini_blueprint.md) and [roadmap](ROADMAP.md).
+See the [product blueprint](memini_blueprint.md) and [roadmap](ROADMAP.md). See also the [Shanghai Impact Hackathon organizer feedback](docs/hackathon-feedback.md).
 
 ## Run it
 
