@@ -9,6 +9,7 @@
 <p align="center">
   🏆 <b>Hackathon winner</b> · built in 12 hours · November 2026 &nbsp;·&nbsp;
   <a href="docs/memini-pitch-deck.pdf">Pitch deck (PDF)</a> &nbsp;·&nbsp;
+  <a href="docs/hackathon-feedback.md">Organizer feedback</a> &nbsp;·&nbsp;
   <a href="#run-it-locally">Run it locally</a>
 </p>
 
